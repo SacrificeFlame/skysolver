@@ -1,0 +1,32 @@
+# SkySolver v2 Dependencies
+
+# Rules engine & solvers
+pydantic>=2.0
+pyomo>=6.4  # MILP formulation for Tier 2
+
+# API & UI
+fastapi>=0.100
+uvicorn>=0.23
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Event streaming (production)
+pulsar-client>=3.1  # Apache Pulsar client for event log
+bookkeeper>=0.1  # BookKeeper for write-once-read-many storage
+
+# Stream processing (production)
+flink>=1.17  # Apache Flink for stateful event processing
+
+# Observability
+prometheus-client>=0.17  # Metrics export
+opentelemetry-api>=1.20  # Tracing
+opentelemetry-sdk>=1.20
+
+# Testing
+pytest>=7.4
+pytest-asyncio>=0.21
+
+# Utilities
+numpy>=1.24  # Numerical operations
+pandas>=2.0  # Data manipulation
+python-dotenv>=1.0  # Config management

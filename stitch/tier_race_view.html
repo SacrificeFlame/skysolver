@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SkySolver Kinetic | Tier Race View</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px currentColor); }
+            50% { opacity: 0.7; filter: drop-shadow(0 0 8px currentColor); }
+        }
+        .glow-active { animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .scanline-container::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, transparent, rgba(172, 237, 255, 0.05), transparent);
+            height: 20%;
+            width: 100%;
+            animation: scanline 4s linear infinite;
+            pointer-events: none;
+        }
+
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: #050b14; }
+        ::-webkit-scrollbar-thumb { background: #1a2b3c; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4cd7f6; }
+
+        .glass-panel {
+            background: rgba(18, 33, 49, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(134, 147, 151, 0.3);
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary-fixed": "#001f26",
+                        "secondary": "#4ae176",
+                        "on-secondary-container": "#004119",
+                        "on-primary": "#003640",
+                        "error-container": "#93000a",
+                        "surface-container-low": "#111d21",
+                        "on-error-container": "#ffdad6",
+                        "outline": "#869397",
+                        "background": "#050b14",
+                        "on-secondary": "#003915",
+                        "on-secondary-fixed": "#002109",
+                        "error": "#ff5252",
+                        "outline-variant": "#3d494c",
+                        "on-primary-fixed-variant": "#004e5c",
+                        "tertiary-container": "#ffb4ae",
+                        "surface-container-high": "#202c2f",
+                        "on-surface": "#d7e5e9",
+                        "surface-variant": "#2b373a",
+                        "inverse-surface": "#d7e5e9",
+                        "surface-bright": "#2f3b3f",
+                        "tertiary-fixed-dim": "#ffb3ad",
+                        "tertiary": "#ffdbd7",
+                        "secondary-container": "#00b954",
+                        "secondary-fixed-dim": "#4ae176",
+                        "on-tertiary-container": "#7b433f",
+                        "surface-container": "#152125",
+                        "primary-container": "#4cd7f6",
+                        "surface-tint": "#4cd7f6",
+                        "on-tertiary": "#51221f",
+                        "tertiary-fixed": "#ffdad7",
+                        "on-tertiary-fixed-variant": "#6d3734",
+                        "inverse-on-surface": "#263236",
+                        "inverse-primary": "#00687a",
+                        "terminal-spine": "#1a2b3c",
+                        "outline-muted": "rgba(134, 147, 151, 0.3)",
+                        "on-primary-container": "#005b6b",
+                        "on-error": "#690005",
+                        "on-background": "#d7e5e9",
+                        "surface-container-lowest": "#041013",
+                        "primary": "#acedff",
+                        "surface-container-highest": "#2b373a",
+                        "primary-fixed-dim": "#4cd7f6",
+                        "on-tertiary-fixed": "#370d0c",
+                        "on-surface-variant": "#bcc9cd",
+                        "on-secondary-fixed-variant": "#005321",
+                        "surface-dim": "#091518",
+                        "secondary-fixed": "#6bff8f",
+                        "surface": "#051424",
+                        "primary-fixed": "#acedff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "header-h": "40px",
+                        "container-padding": "12px",
+                        "sidebar-w": "64px",
+                        "unit": "4px",
+                        "gutter": "8px",
+                        "stack-default": "12px",
+                        "stack-compact": "4px"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Inter"],
+                        "display-sm": ["Inter"],
+                        "data-sm": ["JetBrains Mono"],
+                        "data-lg": ["JetBrains Mono"],
+                        "label-caps": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "data-md": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-md": ["13px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "display-sm": ["20px", {"lineHeight": "1.2", "fontWeight": "500"}],
+                        "data-sm": ["10px", {"lineHeight": "1.2", "fontWeight": "400"}],
+                        "data-lg": ["16px", {"lineHeight": "1.4", "letterSpacing": "0.02em", "fontWeight": "400"}],
+                        "label-caps": ["10px", {"lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "600"}],
+                        "display-lg": ["28px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                        "data-md": ["13px", {"lineHeight": "1.4", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-md overflow-hidden selection:bg-primary selection:text-on-primary">
+<!-- TOP NAVIGATION BAR -->
+<header class="fixed top-0 left-0 right-0 h-header-h flex justify-between items-center px-container-padding z-50 bg-surface-container dark:bg-surface-container/85 backdrop-blur-md border-b border-outline-muted">
+<div class="flex items-center gap-6">
+<span class="font-display-lg text-display-lg font-bold text-primary tracking-tighter">SKYSOLVER KINETIC</span>
+<nav class="hidden md:flex items-center space-x-6 h-full">
+<a class="h-full flex items-center px-2 text-primary border-b-2 border-primary font-bold transition-all font-display-sm text-display-sm uppercase tracking-wider" href="#">FLIGHT OPS</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant font-medium hover:bg-primary/10 hover:text-primary transition-colors duration-200 font-display-sm text-display-sm uppercase tracking-wider" href="#">FLEET</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant font-medium hover:bg-primary/10 hover:text-primary transition-colors duration-200 font-display-sm text-display-sm uppercase tracking-wider" href="#">CREW</a>
+<a class="h-full flex items-center px-2 text-on-surface-variant font-medium hover:bg-primary/10 hover:text-primary transition-colors duration-200 font-display-sm text-display-sm uppercase tracking-wider" href="#">LOGISTICS</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="px-3 py-1 bg-primary/10 border border-primary/40 text-primary font-label-caps text-label-caps hover:bg-primary hover:text-on-primary transition-all">SYSTEM STATUS</button>
+<div class="flex gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">notifications</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">settings</span>
+<span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">account_circle</span>
+</div>
+</div>
+</header>
+<!-- SIDE NAVIGATION BAR -->
+<aside class="fixed left-0 top-header-h bottom-0 w-sidebar-w flex flex-col items-center py-gutter space-y-stack-default z-40 bg-surface-container dark:bg-surface-container/70 backdrop-blur-xl border-r border-outline-muted">
+<div class="flex-1 flex flex-col items-center space-y-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-lg bg-primary/20 text-primary border-l-2 border-primary drop-shadow-[0_0_8px_rgba(172,237,255,0.5)]">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">dashboard</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface transition-all hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">public</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface transition-all hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">query_stats</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface transition-all hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">calendar_month</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface transition-all hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">forum</span>
+</button>
+<button class="w-10 h-10 flex items-center justify-center text-outline hover:text-on-surface transition-all hover:bg-surface-variant/50">
+<span class="material-symbols-outlined">monitoring</span>
+</button>
+</div>
+<div class="flex flex-col items-center space-y-4 pb-4">
+<button class="text-outline hover:text-on-surface"><span class="material-symbols-outlined">help_outline</span></button>
+<button class="text-outline hover:text-error"><span class="material-symbols-outlined">emergency_home</span></button>
+</div>
+</aside>
+<!-- MAIN VIEWPORT -->
+<main class="ml-sidebar-w mt-header-h h-[calc(100vh-40px)] p-gutter grid grid-cols-12 grid-rows-12 gap-gutter scanline-container relative">
+<!-- HEADER / STATUS STRIP -->
+<div class="col-span-12 row-span-1 glass-panel px-4 flex items-center justify-between">
+<div class="flex items-center gap-6">
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-primary">MISSION_OBJECTIVE</span>
+<span class="font-display-sm text-display-sm text-on-surface">TIER_RACE_PROTOCOL_V4.2</span>
+</div>
+<div class="h-8 w-px bg-outline-muted"></div>
+<div class="flex gap-8">
+<div>
+<span class="font-label-caps text-label-caps text-outline block">ACTIVE_CONCURRENCY</span>
+<span class="font-data-md text-data-md text-secondary">842_NODES</span>
+</div>
+<div>
+<span class="font-label-caps text-label-caps text-outline block">GLOBAL_SYNC</span>
+<span class="font-data-md text-data-md text-primary">99.98%</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 px-3 py-1 border border-error/30 bg-error/5">
+<div class="w-2 h-2 rounded-full bg-error glow-active"></div>
+<span class="font-data-sm text-data-sm text-error">CRITICAL_LATENCY: +140ms</span>
+</div>
+<span class="font-data-lg text-data-lg text-primary" id="system-clock">14:22:01:044</span>
+</div>
+</div>
+<!-- LEFT PANEL: TIER LEADERBOARD -->
+<div class="col-span-12 lg:col-span-4 row-span-7 lg:row-span-11 glass-panel flex flex-col p-3 overflow-hidden">
+<div class="flex items-center justify-between mb-4 border-b border-outline-muted pb-2">
+<h2 class="font-label-caps text-label-caps tracking-widest text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">leaderboard</span>
+                    CREW_LEADERBOARD
+                </h2>
+<span class="font-data-sm text-data-sm text-outline">AUTO_REFRESH: 1s</span>
+</div>
+<div class="flex-1 space-y-2 overflow-y-auto pr-1">
+<!-- LEADERBOARD ITEMS -->
+<div class="group border border-outline-muted p-2 hover:border-primary/50 transition-colors bg-surface-container-low cursor-pointer">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-primary">RANK_01: SKY_VALKYRIE</span>
+<span class="font-data-sm text-data-sm text-secondary">RESOLUTION: 98%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant overflow-hidden">
+<div class="h-full bg-secondary w-[98%] group-hover:shadow-[0_0_10px_#4ae176]"></div>
+</div>
+<div class="flex justify-between mt-2 font-data-sm text-data-sm text-outline">
+<span>CREW_VELOCITY: 14.2 ops/s</span>
+<span>LATENCY: 12ms</span>
+</div>
+</div>
+<div class="group border border-outline-muted p-2 hover:border-primary/50 transition-colors bg-surface-container-low cursor-pointer">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-primary">RANK_02: APEX_LOGISTICS</span>
+<span class="font-data-sm text-data-sm text-secondary">RESOLUTION: 94%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant overflow-hidden">
+<div class="h-full bg-secondary w-[94%] group-hover:shadow-[0_0_10px_#4ae176]"></div>
+</div>
+<div class="flex justify-between mt-2 font-data-sm text-data-sm text-outline">
+<span>CREW_VELOCITY: 13.8 ops/s</span>
+<span>LATENCY: 15ms</span>
+</div>
+</div>
+<div class="group border border-outline-muted p-2 hover:border-primary/50 transition-colors bg-surface-container-low cursor-pointer border-l-4 border-l-tertiary">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-tertiary">RANK_03: KINETIC_ZERO [USER]</span>
+<span class="font-data-sm text-data-sm text-secondary">RESOLUTION: 89%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant overflow-hidden">
+<div class="h-full bg-tertiary w-[89%] shadow-[0_0_10px_#ffdbd7]"></div>
+</div>
+<div class="flex justify-between mt-2 font-data-sm text-data-sm text-outline">
+<span>CREW_VELOCITY: 11.4 ops/s</span>
+<span>LATENCY: 24ms</span>
+</div>
+</div>
+<div class="group border border-outline-muted p-2 hover:border-primary/50 transition-colors bg-surface-container-low cursor-pointer">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-primary">RANK_04: NIMBUS_FLIGHT</span>
+<span class="font-data-sm text-data-sm text-tertiary">RESOLUTION: 72%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant overflow-hidden">
+<div class="h-full bg-primary-container w-[72%]"></div>
+</div>
+<div class="flex justify-between mt-2 font-data-sm text-data-sm text-outline">
+<span>CREW_VELOCITY: 8.9 ops/s</span>
+<span>LATENCY: 48ms</span>
+</div>
+</div>
+<!-- Repeat Items -->
+<div class="group border border-outline-muted p-2 opacity-60">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-outline">RANK_05: TITAN_AERO</span>
+<span class="font-data-sm text-data-sm text-outline">RESOLUTION: 45%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant"></div>
+</div>
+<div class="group border border-outline-muted p-2 opacity-60">
+<div class="flex justify-between items-center mb-1">
+<span class="font-data-md text-data-md text-outline">RANK_06: HELIOS_GRID</span>
+<span class="font-data-sm text-data-sm text-outline">RESOLUTION: 32%</span>
+</div>
+<div class="h-1.5 w-full bg-surface-variant"></div>
+</div>
+</div>
+</div>
+<!-- CENTER PANEL: PERFORMANCE GRID & VISUALIZATION -->
+<div class="col-span-12 lg:col-span-5 row-span-7 lg:row-span-8 glass-panel p-3 flex flex-col">
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-label-caps text-label-caps tracking-widest text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">grid_view</span>
+                    RESOLUTION_GRID_DELTA
+                </h2>
+<div class="flex gap-2">
+<button class="text-data-sm text-primary px-2 py-0.5 border border-primary/20 bg-primary/5">LAYER_01</button>
+<button class="text-data-sm text-outline px-2 py-0.5 border border-outline/20">LAYER_02</button>
+</div>
+</div>
+<div class="flex-1 grid grid-cols-10 grid-rows-10 gap-1 border border-outline-muted p-1 bg-background">
+<!-- GRID NODES (64 generated) -->
+<script>
+                    const colors = ['bg-primary/20', 'bg-secondary/40', 'bg-tertiary/30', 'bg-error/20', 'bg-surface-variant'];
+                    for(let i=0; i<100; i++) {
+                        const randomColor = colors[Math.floor(Math.random() * colors.length)];
+                        const isGlowing = Math.random() > 0.8 ? 'glow-active' : '';
+                        document.write(`<div class="w-full h-full ${randomColor} ${isGlowing} border-[0.5px] border-outline-muted/10 hover:border-primary transition-all cursor-crosshair"></div>`);
+                    }
+                </script>
+</div>
+<div class="mt-4 grid grid-cols-3 gap-4">
+<div class="border-t border-primary/30 pt-2">
+<span class="font-label-caps text-label-caps text-outline block">TIER_LATENCY</span>
+<span class="font-data-lg text-data-lg text-primary">0.024ms</span>
+</div>
+<div class="border-t border-secondary/30 pt-2">
+<span class="font-label-caps text-label-caps text-outline block">CREW_VELOCITY</span>
+<span class="font-data-lg text-data-lg text-secondary">84.2%</span>
+</div>
+<div class="border-t border-tertiary/30 pt-2">
+<span class="font-label-caps text-label-caps text-outline block">RESOLUTION_QUOTA</span>
+<span class="font-data-lg text-data-lg text-tertiary">42/100</span>
+</div>
+</div>
+</div>
+<!-- RIGHT PANEL: EVENT STREAM -->
+<div class="col-span-12 lg:col-span-3 row-span-12 lg:row-span-11 glass-panel flex flex-col p-3">
+<div class="flex items-center justify-between mb-4 border-b border-outline-muted pb-2">
+<h2 class="font-label-caps text-label-caps tracking-widest text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">terminal</span>
+                    LIVE_PERFORMANCE_FEED
+                </h2>
+</div>
+<div class="flex-1 font-data-sm text-data-sm space-y-3 overflow-y-auto overflow-x-hidden pr-2">
+<div class="border-l-2 border-secondary pl-2 py-1 bg-secondary/5">
+<div class="flex justify-between text-secondary mb-1">
+<span>[ACK] RESOLUTION_SEQ_084</span>
+<span>14:21:04</span>
+</div>
+<p class="text-on-surface-variant">NODE_ALPHA: Conflict resolved successfully in Sector-4. Latency minimal.</p>
+</div>
+<div class="border-l-2 border-error pl-2 py-1 bg-error/5">
+<div class="flex justify-between text-error mb-1">
+<span>[ERR] CRITICAL_OVERLOAD</span>
+<span>14:21:12</span>
+</div>
+<p class="text-on-surface-variant">NODE_GAMMA: Data collision detected in Crew Velocity stream. Retrying...</p>
+</div>
+<div class="border-l-2 border-primary pl-2 py-1">
+<div class="flex justify-between text-primary mb-1">
+<span>[LOG] TIER_SYNC_COMPLETE</span>
+<span>14:21:45</span>
+</div>
+<p class="text-on-surface-variant">Global sync achieved across 14 regional nodes.</p>
+</div>
+<div class="border-l-2 border-outline pl-2 py-1">
+<div class="flex justify-between text-outline mb-1">
+<span>[SYS] BACKGROUND_MAINTENANCE</span>
+<span>14:22:00</span>
+</div>
+<p class="text-on-surface-variant">Optimizing query paths for Resolution Grid Delta visualization.</p>
+</div>
+<div class="border-l-2 border-secondary pl-2 py-1 bg-secondary/5">
+<div class="flex justify-between text-secondary mb-1">
+<span>[ACK] RESOLUTION_SEQ_085</span>
+<span>14:22:01</span>
+</div>
+<p class="text-on-surface-variant">NODE_BETA: Rescheduling conflict Sector-1 cleared by SKY_VALKYRIE.</p>
+</div>
+<!-- Continuous Feed Items... -->
+<script>
+                    for(let i=0; i<8; i++) {
+                        document.write(`
+                            <div class="border-l-2 border-outline/30 pl-2 py-1 opacity-50">
+                                <div class="flex justify-between text-outline mb-1">
+                                    <span>[LOG] STREAM_PULSE_...</span>
+                                    <span>--:--:--</span>
+                                </div>
+                                <p class="text-on-surface-variant">Standing by for next mission telemetry packet.</p>
+                            </div>
+                        `);
+                    }
+                </script>
+</div>
+<div class="mt-4">
+<input class="w-full bg-surface-container-lowest border border-outline-muted text-data-sm text-primary px-3 py-2 focus:ring-1 focus:ring-primary outline-none placeholder:text-outline-muted" placeholder="CMD_INPUT &gt;" type="text"/>
+</div>
+</div>
+<!-- BOTTOM CHART: VELOCITY TRENDS -->
+<div class="col-span-12 lg:col-span-5 row-span-3 glass-panel p-3 flex flex-col">
+<h2 class="font-label-caps text-label-caps tracking-widest text-primary mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px]">monitoring</span>
+                TIER_VELOCITY_CHART
+            </h2>
+<div class="flex-1 flex items-end gap-1 relative overflow-hidden">
+<!-- SIMPLE CSS CHART BARS -->
+<script>
+                    for(let i=0; i<40; i++) {
+                        const h = Math.floor(Math.random() * 80) + 10;
+                        const op = (h/100).toFixed(1);
+                        document.write(`<div class="flex-1 bg-primary group relative" style="height: ${h}%">
+                            <div class="absolute -top-8 left-1/2 -translate-x-1/2 bg-surface-container border border-primary px-1 text-[8px] opacity-0 group-hover:opacity-100 transition-opacity z-10">${h}v</div>
+                        </div>`);
+                    }
+                </script>
+<div class="absolute inset-0 flex flex-col justify-between pointer-events-none">
+<div class="w-full h-px bg-outline-muted/20"></div>
+<div class="w-full h-px bg-outline-muted/20"></div>
+<div class="w-full h-px bg-outline-muted/20"></div>
+</div>
+</div>
+<div class="flex justify-between mt-2 font-data-sm text-data-sm text-outline">
+<span>T-60MIN</span>
+<span>T-30MIN</span>
+<span>PRESENT</span>
+</div>
+</div>
+</main>
+<!-- FLOATING UI ELEMENTS -->
+<div class="fixed bottom-6 right-6 flex flex-col gap-4">
+<button class="w-12 h-12 rounded-full glass-panel border-primary/50 text-primary flex items-center justify-center hover:scale-110 active:scale-95 transition-transform glow-active">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+<!-- SCRIPTS -->
+<script>
+        // Real-time clock update
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            const ms = String(now.getMilliseconds()).padStart(3, '0');
+            document.getElementById('system-clock').textContent = `${h}:${m}:${s}:${ms}`;
+            requestAnimationFrame(updateClock);
+        }
+        updateClock();
+
+        // Simulate Grid Fluctuations
+        setInterval(() => {
+            const nodes = document.querySelectorAll('.grid > div');
+            const targetNode = nodes[Math.floor(Math.random() * nodes.length)];
+            const currentBg = targetNode.classList.contains('bg-surface-variant') ? 'bg-primary/20' : 'bg-surface-variant';
+            targetNode.style.transition = 'background 0.5s ease';
+            targetNode.className = `w-full h-full ${currentBg} border-[0.5px] border-outline-muted/10 hover:border-primary transition-all cursor-crosshair`;
+        }, 300);
+    </script>
+</body></html>

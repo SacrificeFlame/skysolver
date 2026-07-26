@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SkySolver v2 - Tier 3 Human Assist</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        body { margin: 0; background: #0f1419; color: #e6e6e6; }
+        .header { background: linear-gradient(135deg, #1a237e, #283593); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .badge { background: #4caf50; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .controls { margin-bottom: 24px; display: flex; gap: 12px; align-items: center; }
+        input, button { padding: 8px 16px; border-radius: 6px; border: 1px solid #333; background: #1a1a1a; color: #e6e6e6; }
+        button { cursor: pointer; transition: all 0.2s; }
+        button:hover { background: #2a2a2a; }
+        button.primary { background: #1976d2; border-color: #1976d2; }
+        button.danger { background: #d32f2f; border-color: #d32f2f; }
+        button.success { background: #388e3c; border-color: #388e3c; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+        .card { background: #1a1a1a; border: 1px solid #333; border-radius: 8px; padding: 16px; }
+        .card.pending { border-left: 4px solid #ff9800; }
+        .card.approved { border-left: 4px solid #4caf50; }
+        .card.rejected { border-left: 4px solid #d32f2f; }
+        .card.auto { border-left: 4px solid #2196f3; }
+        .rank { font-size: 24px; font-weight: bold; color: #ffd700; }
+        .meta { font-size: 11px; color: #888; margin-top: 8px; }
+        .explain { font-size: 12px; color: #aaa; margin-top: 8px; line-height: 1.4; }
+        .score-bar { height: 4px; background: #333; border-radius: 2px; margin-top: 8px; }
+        .score-fill { height: 100%; background: linear-gradient(90deg, #4caf50, #ffd700); border-radius: 2px; }
+        .status-tag { font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
+        .status-pending { background: #ff9800; color: #000; }
+        .status-approved { background: #4caf50; color: #000; }
+        .status-rejected { background: #d32f2f; color: #fff; }
+        .status-auto { background: #2196f3; color: #fff; }
+        .queue-stats { display: flex; gap: 24px; margin-bottom: 16px; }
+        .stat { background: #1a1a1a; padding: 12px 20px; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 28px; font-weight: bold; color: #2196f3; }
+        .stat-label { font-size: 11px; color: #888; text-transform: uppercase; }
+        .loading { text-align: center; padding: 40px; color: #888; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        function App() {
+            const [partitionId, setPartitionId] = useState("DEN");
+            const [queue, setQueue] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [schedulerId, setSchedulerId] = useState("SCHEDULER_001");
+            const [error, setError] = useState(null);
+
+            const fetchQueue = useCallback(async (pid) => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const res = await axios.get(`http://localhost:8000/tier3/queue/${pid}`);
+                    setQueue(res.data);
+                } catch (e) {
+                    setError(e.response?.data?.detail || "Failed to fetch queue");
+                } finally {
+                    setLoading(false);
+                }
+            }, []);
+
+            useEffect(() => {
+                fetchQueue(partitionId);
+            }, [fetchQueue, partitionId]);
+
+            const approve = async (ids) => {
+                try {
+                    await axios.post(`http://localhost:8000/tier3/queue/${partitionId}/approve`, {
+                        suggestion_ids: ids,
+                        scheduler_id: schedulerId
+                    });
+                    fetchQueue(partitionId);
+                } catch (e) {
+                    setError("Approval failed");
+                }
+            };
+
+            const reject = async (ids) => {
+                try {
+                    await axios.post(`http://localhost:8000/tier3/queue/${partitionId}/reject`, {
+                        suggestion_ids: ids,
+                        scheduler_id: schedulerId
+                    });
+                    fetchQueue(partitionId);
+                } catch (e) {
+                    setError("Rejection failed");
+                }
+            };
+
+            const autoApproveAll = async () => {
+                try {
+                    await axios.post(`http://localhost:8000/tier3/queue/${partitionId}/auto_approve?scheduler_id=${schedulerId}`);
+                    fetchQueue(partitionId);
+                } catch (e) {
+                    setError("Auto-approve failed");
+                }
+            };
+
+            if (loading) return <div className="loading">Loading review queue...</div>;
+            if (error) return <div className="loading" style={{color:'#d32f2f'}}>{error}</div>;
+            if (!queue) return <div className="loading">No queue data</div>;
+
+            const pending = queue.suggestions.filter(s => s.status === 'pending');
+
+            return (
+                <div>
+                    <div className="header">
+                        <h1>SkySolver v2 · Tier 3 Human-Assist</h1>
+                        <span className="badge">● LIVE</span>
+                    </div>
+                    <div className="container">
+                        <div className="controls">
+                            <label>Partition: </label>
+                            <select value={partitionId} onChange={e => setPartitionId(e.target.value)}>
+                                {['DEN','ORD','ATL','LAX','MIA','DFW','EWR','SEA','PHX','LAS'].map(h => (
+                                    <option key={h} value={h}>{h}</option>
+                                ))}
+                            </select>
+                            <input
+                                placeholder="Scheduler ID"
+                                value={schedulerId}
+                                onChange={e => setSchedulerId(e.target.value)}
+                                style={{width: 140}}
+                            />
+                            <button className="primary" onClick={() => fetchQueue(partitionId)}>Refresh</button>
+                            <button className="success" onClick={autoApproveAll}>Auto-Approve All</button>
+                        </div>
+
+                        <div className="queue-stats">
+                            <div className="stat">
+                                <div className="stat-value">{queue.pending_count}</div>
+                                <div className="stat-label">Pending</div>
+                            </div>
+                            <div className="stat">
+                                <div className="stat-value" style={{color:'#4caf50'}}>{queue.approved_count}</div>
+                                <div className="stat-label">Approved</div>
+                            </div>
+                            <div className="stat">
+                                <div className="stat-value">{queue.suggestions.length}</div>
+                                <div className="stat-label">Total</div>
+                            </div>
+                        </div>
+
+                        {pending.length === 0 && (
+                            <div className="loading" style={{color:'#4caf50'}}>
+                                ✓ All suggestions reviewed
+                            </div>
+                        )}
+
+                        <div className="grid">
+                            {queue.suggestions.map(s => {
+                                const statusClass = s.status === 'pending' ? 'pending'
+                                    : s.status === 'approved' ? 'approved'
+                                    : s.status === 'rejected' ? 'rejected' : 'auto';
+                                const statusTag = s.status === 'pending' ? 'status-pending'
+                                    : s.status === 'approved' ? 'status-approved'
+                                    : s.status === 'rejected' ? 'status-rejected' : 'status-auto';
+                                const score = Math.round((1 - s.passenger_impact_score) * 100);
+
+                                return (
+                                    <div key={s.suggestion_id} className={`card ${statusClass}`}>
+                                        <div className="rank">#{s.rank}</div>
+                                        <span className={`status-tag ${statusTag}`}>{s.status.toUpperCase()}</span>
+                                        <div style={{fontWeight:'bold', marginBottom: 4}}>Crew {s.crew_id}</div>
+                                        <div style={{fontSize:'13px'}}>
+                                            {s.proposed_flight_ids.length > 0 ? (
+                                                <>Proposed: {s.proposed_flight_ids.join(', ')}</>
+                                            ) : (
+                                                <>No flights proposed</>
+                                            )}
+                                        </div>
+                                        <div className="score-bar">
+                                            <div className="score-fill" style={{width: `${score}%`}}></div>
+                                        </div>
+                                        <div className="meta">
+                                            Duty cost: {s.duty_time_cost.toFixed(1)}h ·
+                                            Fairness: {(s.seniority_fairness*100).toFixed(0)}% ·
+                                            Impact: {(s.passenger_impact_score*100).toFixed(0)}%
+                                        </div>
+                                        <div className="explain">{s.explanation}</div>
+                                        {s.status === 'pending' && (
+                                            <div style={{marginTop: 12, display:'flex', gap: 8}}>
+                                                <button className="success" onClick={() => approve([s.suggestion_id])}>✓ Approve</button>
+                                                <button className="danger" onClick={() => reject([s.suggestion_id])}>✗ Reject</button>
+                                            </div>
+                                        )}
+                                        {s.approved_by && (
+                                            <div className="meta">Approved by: {s.approved_by}</div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

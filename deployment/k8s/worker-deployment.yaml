@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skysolver-worker
+  labels:
+    app: skysolver-worker
+spec:
+  # Initial replicas; KEDA scales this based on queue depth
+  replicas: 3
+  selector:
+    matchLabels:
+      app: skysolver-worker
+  template:
+    metadata:
+      labels:
+        app: skysolver-worker
+    spec:
+      # Per-partition resource quotas for compute isolation
+      containers:
+      - name: solver
+        image: skysolver/worker:latest
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+        env:
+        - name: PARTITION_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['partition']
+        - name: SOLVER_TIER
+          value: "1"  # Tier 1 default; Tier 2 via separate deployment
+        - name: PULSAR_URL
+          value: "pulsar://pulsar:6650"
+        ports:
+        - containerPort: 8080
+        # Liveness/readiness for graceful degradation
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: skysolver-worker
+spec:
+  selector:
+    app: skysolver-worker
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  type: ClusterIP

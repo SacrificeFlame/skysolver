@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'skysolver-workers'
+    static_configs:
+      - targets: ['worker:8080']
+
+  - job_name: 'skysolver-tier3'
+    static_configs:
+      - targets: ['tier3-api:8000']

@@ -1,0 +1,67 @@
+version: '3.8'
+
+# SkySolver v2 Local Development Compose
+# Elastic worker pool simulation with KEDA-like autoscaling
+
+services:
+  # Event streaming backbone
+  pulsar:
+    image: apachepulsar/pulsar:3.1.0
+    command: bin/pulsar standalone
+    ports:
+      - "6650:6650"
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "bin/pulsar-admin", "brokers", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Tier 3 API (human-assist interface)
+  tier3-api:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.worker
+    command: uvicorn solvers.tier3_api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    environment:
+      - PULSAR_URL=pulsar://pulsar:6650
+
+  # Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.worker
+    command: python -m deployment.dashboard
+    ports:
+      - "8501:8501"
+    depends_on:
+      - tier3-api
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # Worker pool simulation (would be KEDA-managed in prod)
+  worker:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.worker
+    command: python -m deployment.worker --partition all
+    deploy:
+      replicas: 3
+    depends_on:
+      pulsar:
+        condition: service_healthy
+    environment:
+      - PULSAR_URL=pulsar://pulsar:6650
+      - SOLVER_TIER=1
+    scale: 3
