@@ -745,21 +745,31 @@ const AC_V=[[0.13,0,0],[0.06,0,0],[-0.02,0,0],[-0.10,0,0],[-0.14,0,0],
   [-0.135,0,0.035],[-0.135,0,-0.035],[-0.14,0,0]];
 const AC_E=[[0,1],[1,2],[2,3],[3,4],[5,6],[5,0],[6,0],[7,8],[7,3],[8,3],[9,10],[9,3],[10,3],[11,9],[11,10]];
 const AC_SIDE=[5,6,7,8];   // shaded wing/tail edges
-function P3(p,wx,wy,wz){const c=Math.cos(p.pitch),s=Math.sin(p.pitch);
-  // rotate body (up=wy, north=wz) by pitch about the east axis, then place at world (east, up+alt, north)
-  const worldUp = wy*c + wz*s;
-  const worldNorth = -wy*s + wz*c;
-  return project(wx, worldUp + p.alt, worldNorth + p.y);}
+function P3(p, vx, vy, vz) {
+  const cp = Math.cos(p.pitch), sp = Math.sin(p.pitch);
+  const px = vx * cp - vy * sp;
+  const py = vx * sp + vy * cp;
+  const pz = vz;
+  
+  const cy = Math.cos(p.angle), sy = Math.sin(p.angle);
+  const yx = px * cy - pz * sy;
+  const yz = px * sy + pz * cy;
+  
+  return project(p.x + yx, p.alt + py, p.y + yz);
+}
 function drawPlane3D(p,time){const col=TIER_COLORS[p.tier];
-  // ground shadow
-  if(p.alt>0.004){ctx.save();ctx.strokeStyle="rgba(0,0,0,0.45)";ctx.lineWidth=2;
-    const a=P3(p,p.x,0,p.y),b=P3(p,p.x,0,p.y-0.26);
-    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.restore();}
-  // vapor trail
+  // ground shadow & vertical drop line
+  if(p.alt>0.004){ctx.save();ctx.fillStyle="rgba(0,0,0,0.45)";
+    const shadow=project(p.x,0,p.y);
+    ctx.beginPath();ctx.arc(shadow[0],shadow[1],4,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,0.15)";ctx.lineWidth=1;
+    const planePos=project(p.x,p.alt,p.y);
+    ctx.beginPath();ctx.moveTo(shadow[0],shadow[1]);ctx.lineTo(planePos[0],planePos[1]);ctx.stroke();ctx.restore();}
+  // vapor trail on the ground
   if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
-    for(let i=1;i<p.trail.length;i++){const t=i/p.trail.length;const a=P3(p,p.trail[i-1][0],0,p.trail[i-1][1]),b=P3(p,p.trail[i][0],0,p.trail[i][1]);
+    for(let i=1;i<p.trail.length;i++){const t=i/p.trail.length;const a=project(p.trail[i-1][0],0,p.trail[i-1][1]),b=project(p.trail[i][0],0,p.trail[i][1]);
       ctx.globalAlpha=t*0.4;ctx.strokeStyle=col;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}ctx.restore();}
-  const V=AC_V.map(v=>P3(p,p.x+v[0],v[1],p.y+v[2]));
+  const V=AC_V.map(v=>P3(p,v[0],v[1],v[2]));
   ctx.save();
   ctx.lineWidth=2.4;ctx.strokeStyle=col;ctx.shadowColor=col;ctx.shadowBlur=10;
   for(const e of AC_E){const a=V[e[0]],b=V[e[1]];ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
@@ -767,7 +777,7 @@ function drawPlane3D(p,time){const col=TIER_COLORS[p.tier];
   ctx.shadowBlur=0;ctx.fillStyle="#fff";const nose=V[0];ctx.beginPath();ctx.arc(nose[0],nose[1],1.6,0,Math.PI*2);ctx.fill();
   ctx.restore();
   // label
-  const lc=P3(p,p.x+0.04,0,p.y);
+  const lc=project(p.x+0.04,p.alt,p.y);
   ctx.save();ctx.fillStyle="rgba(225,237,240,0.9)";ctx.font="9px monospace";ctx.fillText(p.id,lc[0]+4,lc[1]-6);ctx.restore();
   // HUD marker (only in 3D)
   const hud=project(p.x,0.26,p.y);
