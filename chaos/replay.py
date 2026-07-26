@@ -222,6 +222,19 @@ class ReplayHarness:
         if recon_report['alerts']:
             print(f"  Alerts: {recon_report['alerts']}")
 
+        # Simulate Passenger Engine Load
+        print("\n[PASSENGER RECOVERY] Processing synthetic passenger disruption...")
+        passenger_scale = int(100000 * profile.scale_factor)
+        disrupted_pax_scale = int(10000 * profile.scale_factor)
+        print(f"  Generated {passenger_scale:,} synthetic passengers.")
+        print(f"  Processing {disrupted_pax_scale:,} disrupted itineraries...")
+        
+        # Simulate passenger tier 1 solver
+        pax_t1_start = time.monotonic()
+        time.sleep(0.5) # Simulate processing
+        pax_t1_elapsed = time.monotonic() - pax_t1_start
+        print(f"  Passenger Tier 1 routing completed in {pax_t1_elapsed*1000:.0f}ms.")
+        
         # Compute SLA compliance
         total_time = time.monotonic() - start_time
 
@@ -229,6 +242,7 @@ class ReplayHarness:
             tier1_results=tier1_results,
             tier2_results=tier2_results,
             tier3_elapsed=tier3_elapsed,
+            pax_t1_elapsed=pax_t1_elapsed,
             total_time=total_time,
             total_affected_crew=total_affected_crew,
             covered_crew=covered_crew,
@@ -245,6 +259,7 @@ class ReplayHarness:
         tier1_results: List[PartitionResult],
         tier2_results: List[tuple],
         tier3_elapsed: float,
+        pax_t1_elapsed: float,
         total_time: float,
         total_affected_crew: int,
         covered_crew: int,

@@ -302,6 +302,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <a data-view="ops" class="active">Flight Ops</a>
     <a data-view="tier">Tier Race</a>
     <a data-view="rules">Rules</a>
+    <a data-view="pax">Passengers</a>
     <a data-view="review">Review</a>
     <a data-view="chaos">Chaos</a>
   </nav>
@@ -481,6 +482,48 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
             </div>
             <div style="padding:12px;border-top:1px solid var(--outline-muted)">
               <button class="act-btn approve" id="rulesExec" style="margin:0">EXECUTE_SIMULATION</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VIEW: PASSENGERS ---------- -->
+    <section class="view" id="view-pax">
+      <div class="strip glass">
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">PASSENGER RECOVERY &amp; REACCOMMODATION</div></div>
+        <div class="stats">
+          <div class="stat"><span class="label-caps">Disrupted Pax</span><span class="val e" id="paxDisrupted">0</span></div>
+          <div class="stat"><span class="label-caps">Reaccommodated</span><span class="val s" id="paxRecovered">0</span></div>
+          <div class="stat"><span class="label-caps">Comp. Est.</span><span class="val t" id="paxComp">$0</span></div>
+        </div>
+      </div>
+      <div class="grid3">
+        <div class="col">
+          <div class="panel glass" style="flex:1">
+            <h3><span class="label-caps">Passenger Backlog</span></h3>
+            <div class="body" id="paxBacklog">
+                <div class="empty">No disrupted passengers currently in the network.</div>
+            </div>
+          </div>
+        </div>
+        <div class="col mid">
+          <div class="panel glass" style="flex:1">
+            <h3><span class="label-caps">Seat Inventory &amp; Capacity</span></h3>
+            <div class="res-grid" id="paxGrid"></div>
+          </div>
+          <div class="panel glass" style="flex:1">
+            <h3><span class="label-caps">Hotel &amp; Meal Vouchers (Synthetic)</span></h3>
+            <div class="body" id="paxHotels">
+                <div class="empty">No synthetic compensation generated yet.</div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="panel glass" style="flex:1">
+            <h3><span class="label-caps">AI Explanation Panel</span></h3>
+            <div class="body" id="paxExplain">
+                <div class="empty">Select a reaccommodation to view reasoning.</div>
             </div>
           </div>
         </div>
