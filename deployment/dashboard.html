@@ -349,7 +349,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
               <div class="kpi"><div class="l">Avg Coverage</div><div class="v s" id="kCov">0%</div></div>
               <div class="kpi"><div class="l">Tier 1</div><div class="v" id="kT1">0</div></div>
               <div class="kpi"><div class="l">Tier 2</div><div class="v" id="kT2">0</div></div>
-              <div class="kpi"><div class="l">SLA Breaches</div><div class="v e" id="kBreach">0</div></div>
+              <div class="kpi"><div class="l">SLA Breaches</div><div class="v" id="kBreach">0</div></div>
             </div>
           </div>
           <div class="panel glass-soft" style="flex:1">
@@ -691,9 +691,11 @@ function spawnPlane(tier,opts){
   const r=Math.random()<0.5?runwayA():runwayB(); const g=(seq)%N_GATES;
   const isOut=opts.kind?opts.kind==="out":Math.random()<0.55;
   const path=isOut?outboundPath(g,r):inboundPath(g,r); seq++;
+  // small lateral jitter so isometric gate cluster doesn't fully stack
+  const jx=(Math.random()-0.5)*0.012, jz=(Math.random()-0.5)*0.008;
   planes.push({id:makeFlightId(tier),tier,partition:opts.partition||pick(HUBS),path,seg:0,t:0,
-    x:path.nodes[0][0],y:path.nodes[0][1],angle:0,trail:[],done:false,phase:isOut?"TAXI OUT":"APPROACH",spawn:performance.now(),
-    alt:0,pitch:0});
+    x:path.nodes[0][0]+jx,y:path.nodes[0][1]+jz,angle:0,trail:[],done:false,phase:isOut?"TAXI OUT":"APPROACH",spawn:performance.now(),
+    alt:0,pitch:0,jx,jz});
 }
 function lerp(a,b,t){return a+(b-a)*t;}
 function hash(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}return Math.abs(h);}
@@ -712,7 +714,7 @@ function updatePlane(p,dt){
   // 3D state: progress along full path drives climb / descent profile
   const n=nodes.length-1; const prog=(p.seg+p.t)/n;          // 0..1 along whole route
   const isOut=p.path.kind==="out";
-  const CRZ=0.22;                                            // cruise altitude (world units)
+  const CRZ=0.18;                                            // cruise altitude (world units)
   if(isOut) p.alt = prog<0.6 ? 0 : Math.min(CRZ,(prog-0.6)/0.4*CRZ);
   else      p.alt = prog>0.4 ? 0 : Math.min(CRZ,(0.4-prog)/0.4*CRZ);
   p.pitch = isOut ? (p.alt>0.005?-0.32:0) : (p.alt>0.005?0.32:0);  // nose up on climb, down on approach
@@ -744,93 +746,196 @@ function drawTerminal(time){ctx.save();const tx=GATE_X0*W-6,tw=(N_GATES*GATE_DX)
 function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 
 /* ============================================================
-   3D ISOMETRIC SCENE — real projected aircraft models
-   World space: x = east, z = north (ground plane y=0), y = up.
-   Camera looks down at PITCH; project() maps (x,y,z) -> screen px.
+   3D ISOMETRIC SCENE — classic 2:1 isometric projection
+   World: x = east, y = up, z = north (map y → world z).
+   screenX = (x − z) · cos30 · scale
+   screenY = (x + z) · sin30 · scale − y · scale
    ============================================================ */
-const CAM={pitch:0.99, tilt:-1, scale:540};
-function project(wx,wy,wz){
-  const c=Math.cos(CAM.pitch),s=Math.sin(CAM.pitch);
-  const ry=wy*c + wz*s*CAM.tilt;
-  const rz=-wy*s + wz*c;
-  const persp=1.0/(1+wy*0.35);
-  return [W*0.5+wx*CAM.scale*zoom, H*0.56+ry*CAM.scale*zoom*persp];
+const ISO_COS = Math.sqrt(3) / 2; // cos(30°) ≈ 0.866
+const ISO_SIN = 0.5;              // sin(30°)
+const CAM = { scale: 460, ox: 0.50, oz: 0.52, yaw: 0.55 }; // yaw ~31° for classic diamond framing
+function project(wx, wy, wz){
+  // center, then yaw so runways read as isometric diagonals (not flat horizontals)
+  let x = wx - CAM.ox, z = wz - CAM.oz;
+  const cy=Math.cos(CAM.yaw), syaw=Math.sin(CAM.yaw);
+  const rx = x*cy - z*syaw, rz = x*syaw + z*cy;
+  const sx = (rx - rz) * ISO_COS;
+  const sy = (rx + rz) * ISO_SIN - wy * 1.35;
+  return [W * 0.50 + sx * CAM.scale * zoom, H * 0.36 + sy * CAM.scale * zoom];
 }
-function drawGrid3D(){ctx.save();ctx.strokeStyle="rgba(60,120,200,0.08)";ctx.lineWidth=1;
-  for(let x=-0.5;x<=0.6;x+=0.1){const a=project(x,0,-0.55),b=project(x,0,0.45);
-    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
-  for(let z=-0.55;z<=0.45;z+=0.1){const a=project(-0.5,0,z),b=project(0.6,0,z);
-    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}ctx.restore();}
-function drawRadar3D(time){const cx=0.05,cy=0.0;ctx.save();
-  ctx.strokeStyle="rgba(172,237,255,0.10)";ctx.lineWidth=1;
-  for(let i=1;i<=4;i++){const R=0.42*i/4;ctx.beginPath();
-    for(let a=0;a<=64;a++){const t=a/64*Math.PI*2;const p=project(cx+Math.cos(t)*R,0,cy+Math.sin(t)*R);a?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);}ctx.closePath();ctx.stroke();}
-  const ang=(time*0.0006)%(Math.PI*2),R=0.42;
-  ctx.strokeStyle="rgba(172,237,255,0.35)";const c=project(cx,0,cy),e=project(cx+Math.cos(ang)*R,0,cy+Math.sin(ang)*R);
-  ctx.beginPath();ctx.moveTo(c[0],c[1]);ctx.lineTo(e[0],e[1]);ctx.stroke();ctx.restore();}
-function drawRunway3D(rwy,time){const [sx,sy]=rwy.s,[ex,ey]=rwy.e;const x1=sx,y1=sy,x2=ex,y2=ey;ctx.save();
-  const a=project(x1,0,y1),b=project(x2,0,y2);
-  ctx.strokeStyle="rgba(120,150,190,0.20)";ctx.lineWidth=Math.max(10,18*zoom);ctx.lineCap="round";
-  ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
-  ctx.strokeStyle="rgba(220,235,255,0.5)";ctx.lineWidth=1.5;ctx.setLineDash([10,10]);
-  ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.setLineDash([]);
-  const n=9,blink=(Math.sin(time*0.004)>0);for(let i=0;i<=n;i++){const t=i/n;const p=project(lerp(x1,x2,t),0,lerp(y1,y2,t));
-    ctx.fillStyle=blink?"rgba(255,240,180,0.9)":"rgba(255,240,180,0.25)";ctx.beginPath();ctx.arc(p[0],p[1],1.8,0,Math.PI*2);ctx.fill();}ctx.restore();}
-function drawTerminal3D(time){ctx.save();
-  const xs=project(GATE_X0-0.01,0,GATE_Y),xe=project(GATE_X0+(N_GATES-1)*GATE_DX+0.01,0,GATE_Y);
-  const ys=project(GATE_X0-0.01,0,GATE_Y+0.05),ye=project(GATE_X0+(N_GATES-1)*GATE_DX+0.01,0,GATE_Y+0.05);
-  ctx.fillStyle="rgba(20,34,60,0.85)";ctx.strokeStyle="rgba(80,140,220,0.3)";ctx.beginPath();
-  ctx.moveTo(xs[0],xs[1]);ctx.lineTo(xe[0],xe[1]);ctx.lineTo(ye[0],ye[1]);ctx.lineTo(ys[0],ys[1]);ctx.closePath();ctx.fill();ctx.stroke();
-  for(let i=0;i<N_GATES;i++){const p=project(gateX(i),0,GATE_Y-0.005);ctx.fillStyle="rgba(172,237,255,0.3)";ctx.fillRect(p[0]-4,p[1]-2,8,4);}ctx.restore();}
+function depthKey(wx, wy, wz){ return (wx - CAM.ox) + (wz - CAM.oz) - wy * 2; }
+function drawGrid3D(){
+  ctx.save(); ctx.strokeStyle="rgba(80,150,220,0.16)"; ctx.lineWidth=1;
+  const x0=-0.05, x1=1.05, z0=-0.05, z1=1.05, step=0.1;
+  for(let x=x0; x<=x1+1e-9; x+=step){
+    const a=project(x,0,z0), b=project(x,0,z1);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  }
+  for(let z=z0; z<=z1+1e-9; z+=step){
+    const a=project(x0,0,z), b=project(x1,0,z);
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawRadar3D(time){
+  const cx=0.48, cz=0.42; ctx.save();
+  ctx.strokeStyle="rgba(172,237,255,0.12)"; ctx.lineWidth=1;
+  for(let i=1;i<=4;i++){
+    const R=0.38*i/4; ctx.beginPath();
+    for(let a=0;a<=64;a++){
+      const t=a/64*Math.PI*2;
+      const p=project(cx+Math.cos(t)*R, 0, cz+Math.sin(t)*R);
+      a?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);
+    }
+    ctx.closePath(); ctx.stroke();
+  }
+  const ang=(time*0.0006)%(Math.PI*2), R=0.38;
+  ctx.strokeStyle="rgba(172,237,255,0.40)";
+  const c=project(cx,0,cz), e=project(cx+Math.cos(ang)*R,0,cz+Math.sin(ang)*R);
+  ctx.beginPath(); ctx.moveTo(c[0],c[1]); ctx.lineTo(e[0],e[1]); ctx.stroke();
+  // sweep wedge (projected polygon)
+  ctx.fillStyle="rgba(172,237,255,0.06)";
+  ctx.beginPath(); ctx.moveTo(c[0],c[1]);
+  for(let k=0;k<=12;k++){
+    const t=ang - (k/12)*0.55;
+    const p=project(cx+Math.cos(t)*R,0,cz+Math.sin(t)*R);
+    ctx.lineTo(p[0],p[1]);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+function drawRunway3D(rwy,time){
+  const [sx,sz]=rwy.s, [ex,ez]=rwy.e; ctx.save();
+  // runway as a flat ribbon with slight width in isometric
+  const dx=ex-sx, dz=ez-sz, len=Math.hypot(dx,dz)||1;
+  const nx=(-dz/len)*0.012, nz=(dx/len)*0.012;
+  const corners=[
+    project(sx-nx,0,sz-nz), project(sx+nx,0,sz+nz),
+    project(ex+nx,0,ez+nz), project(ex-nx,0,ez-nz)
+  ];
+  ctx.fillStyle="rgba(40,60,90,0.55)"; ctx.strokeStyle="rgba(120,150,190,0.35)"; ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(corners[0][0],corners[0][1]);
+  for(let i=1;i<4;i++) ctx.lineTo(corners[i][0],corners[i][1]);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // centerline
+  const a=project(sx,0,sz), b=project(ex,0,ez);
+  ctx.strokeStyle="rgba(220,235,255,0.55)"; ctx.lineWidth=1.4; ctx.setLineDash([8,8]);
+  ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); ctx.setLineDash([]);
+  const n=9, blink=(Math.sin(time*0.004)>0);
+  for(let i=0;i<=n;i++){
+    const t=i/n; const p=project(lerp(sx,ex,t),0,lerp(sz,ez,t));
+    ctx.fillStyle=blink?"rgba(255,240,180,0.95)":"rgba(255,240,180,0.25)";
+    ctx.beginPath(); ctx.arc(p[0],p[1],1.8,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawBox3D(x0,z0,x1,z1,h,fill,stroke){
+  // isometric extruded box: ground quad + walls + roof
+  const g=[project(x0,0,z0),project(x1,0,z0),project(x1,0,z1),project(x0,0,z1)];
+  const t=[project(x0,h,z0),project(x1,h,z0),project(x1,h,z1),project(x0,h,z1)];
+  ctx.fillStyle=fill; ctx.strokeStyle=stroke; ctx.lineWidth=1;
+  // left wall
+  ctx.beginPath(); ctx.moveTo(g[0][0],g[0][1]); ctx.lineTo(g[3][0],g[3][1]);
+  ctx.lineTo(t[3][0],t[3][1]); ctx.lineTo(t[0][0],t[0][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // right wall
+  ctx.beginPath(); ctx.moveTo(g[1][0],g[1][1]); ctx.lineTo(g[2][0],g[2][1]);
+  ctx.lineTo(t[2][0],t[2][1]); ctx.lineTo(t[1][0],t[1][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // front wall
+  ctx.beginPath(); ctx.moveTo(g[3][0],g[3][1]); ctx.lineTo(g[2][0],g[2][1]);
+  ctx.lineTo(t[2][0],t[2][1]); ctx.lineTo(t[3][0],t[3][1]); ctx.closePath();
+  ctx.fillStyle="rgba(30,50,80,0.9)"; ctx.fill(); ctx.stroke();
+  // roof
+  ctx.fillStyle="rgba(50,90,140,0.75)";
+  ctx.beginPath(); ctx.moveTo(t[0][0],t[0][1]); ctx.lineTo(t[1][0],t[1][1]);
+  ctx.lineTo(t[2][0],t[2][1]); ctx.lineTo(t[3][0],t[3][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+}
+function drawTerminal3D(){
+  ctx.save();
+  const x0=GATE_X0-0.01, x1=GATE_X0+(N_GATES-1)*GATE_DX+0.01;
+  const z0=GATE_Y, z1=GATE_Y+0.06;
+  drawBox3D(x0,z0,x1,z1,0.045,"rgba(25,42,72,0.85)","rgba(80,140,220,0.4)");
+  for(let i=0;i<N_GATES;i++){
+    const gx=gateX(i);
+    const p=project(gx,0.01,GATE_Y-0.008);
+    ctx.fillStyle="rgba(172,237,255,0.45)";
+    ctx.fillRect(p[0]-3,p[1]-2,6,3);
+  }
+  ctx.restore();
+}
 /* Aircraft as a 3D wireframe (fuselage spine, swept wings, tail, fin). */
-const AC_V=[[0.13,0,0],[0.06,0,0],[-0.02,0,0],[-0.10,0,0],[-0.14,0,0],
-  [0.05,0,0.075],[0.05,0,-0.075],[-0.12,0,0.05],[-0.12,0,-0.05],
-  [-0.135,0,0.035],[-0.135,0,-0.035],[-0.14,0,0]];
-const AC_E=[[0,1],[1,2],[2,3],[3,4],[5,6],[5,0],[6,0],[7,8],[7,3],[8,3],[9,10],[9,3],[10,3],[11,9],[11,10]];
-const AC_SIDE=[5,6,7,8];   // shaded wing/tail edges
-function P3(p, vx, vy, vz) {
-  const cp = Math.cos(p.pitch), sp = Math.sin(p.pitch);
-  const px = vx * cp - vy * sp;
-  const py = vx * sp + vy * cp;
-  const pz = vz;
-  
-  const cy = Math.cos(p.angle), sy = Math.sin(p.angle);
-  const yx = px * cy - pz * sy;
-  const yz = px * sy + pz * cy;
-  
+const AC_V=[
+  [0.055,0.004,0],[0.025,0.006,0],[0,0.004,0],[-0.035,0.002,0],[-0.055,0,0],
+  [0.01,0,0.038],[0.01,0,-0.038],[-0.04,0.002,0.022],[-0.04,0.002,-0.022],
+  [-0.048,0.028,0],[-0.055,0,0.014],[-0.055,0,-0.014]
+];
+const AC_E=[[0,1],[1,2],[2,3],[3,4],[5,6],[5,1],[6,1],[7,8],[7,3],[8,3],[9,3],[9,4],[10,4],[11,4],[10,11]];
+const AC_WING=[1,5,3,6]; // fuselage mid → L wing → aft → R wing
+function P3(p, vx, vy, vz){
+  // pitch about lateral (z), then yaw about up (y) using path heading
+  const cp=Math.cos(p.pitch), sp=Math.sin(p.pitch);
+  const px=vx*cp - vy*sp;
+  const py=vx*sp + vy*cp;
+  const pz=vz;
+  const cy=Math.cos(p.angle), sy=Math.sin(p.angle);
+  const yx=px*cy - pz*sy;
+  const yz=px*sy + pz*cy;
   return project(p.x + yx, p.alt + py, p.y + yz);
 }
-function drawPlane3D(p,time){const col=TIER_COLORS[p.tier];
-  // ground shadow & vertical drop line
-  if(p.alt>0.004){ctx.save();ctx.fillStyle="rgba(0,0,0,0.45)";
-    const shadow=project(p.x,0,p.y);
-    ctx.beginPath();ctx.arc(shadow[0],shadow[1],4,0,Math.PI*2);ctx.fill();
-    ctx.strokeStyle="rgba(255,255,255,0.15)";ctx.lineWidth=1;
-    const planePos=project(p.x,p.alt,p.y);
-    ctx.beginPath();ctx.moveTo(shadow[0],shadow[1]);ctx.lineTo(planePos[0],planePos[1]);ctx.stroke();ctx.restore();}
-  // vapor trail on the ground
-  if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
-    for(let i=1;i<p.trail.length;i++){const t=i/p.trail.length;const a=project(p.trail[i-1][0],0,p.trail[i-1][1]),b=project(p.trail[i][0],0,p.trail[i][1]);
-      ctx.globalAlpha=t*0.4;ctx.strokeStyle=col;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}ctx.restore();}
+function drawPlane3D(p){
+  const col=TIER_COLORS[p.tier];
+  // ground shadow + altitude stem
+  if(p.alt>0.004){
+    ctx.save();
+    const shadow=project(p.x,0,p.y), tip=project(p.x,p.alt,p.y);
+    ctx.fillStyle="rgba(0,0,0,0.40)";
+    ctx.beginPath(); ctx.ellipse(shadow[0],shadow[1],7,3.5,0,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,0.18)"; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(shadow[0],shadow[1]); ctx.lineTo(tip[0],tip[1]); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  }
+  // vapor trail — only while airborne so taxi cluster stays clean
+  if(p.alt>0.004 && p.trail.length>1){
+    ctx.save(); ctx.lineWidth=2; ctx.lineCap="round";
+    for(let i=1;i<p.trail.length;i++){
+      const t=i/p.trail.length;
+      const a=project(p.trail[i-1][0],0,p.trail[i-1][1]);
+      const b=project(p.trail[i][0],0,p.trail[i][1]);
+      ctx.globalAlpha=t*0.35; ctx.strokeStyle=col;
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+    }
+    ctx.restore();
+  }
   const V=AC_V.map(v=>P3(p,v[0],v[1],v[2]));
   ctx.save();
-  ctx.lineWidth=2.4;ctx.strokeStyle=col;ctx.shadowColor=col;ctx.shadowBlur=10;
-  for(const e of AC_E){const a=V[e[0]],b=V[e[1]];ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();}
-  for(const si of AC_SIDE){const v=V[si];ctx.fillStyle=col;ctx.globalAlpha=0.18;ctx.beginPath();ctx.arc(v[0],v[1],2.2,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
-  ctx.shadowBlur=0;ctx.fillStyle="#fff";const nose=V[0];ctx.beginPath();ctx.arc(nose[0],nose[1],1.6,0,Math.PI*2);ctx.fill();
+  // filled wing poly for solid silhouette
+  ctx.fillStyle=col; ctx.globalAlpha=0.22;
+  ctx.beginPath();
+  ctx.moveTo(V[AC_WING[0]][0],V[AC_WING[0]][1]);
+  for(let i=1;i<AC_WING.length;i++) ctx.lineTo(V[AC_WING[i]][0],V[AC_WING[i]][1]);
+  ctx.closePath(); ctx.fill(); ctx.globalAlpha=1;
+  ctx.lineWidth=2.2; ctx.strokeStyle=col; ctx.shadowColor=col; ctx.shadowBlur=8;
+  for(const e of AC_E){
+    const a=V[e[0]], b=V[e[1]];
+    ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+  }
+  ctx.shadowBlur=0; ctx.fillStyle="#fff";
+  ctx.beginPath(); ctx.arc(V[0][0],V[0][1],2,0,Math.PI*2); ctx.fill();
   ctx.restore();
-  // label
-  const lc=project(p.x+0.04,p.alt,p.y);
-  ctx.save();ctx.fillStyle="rgba(225,237,240,0.9)";ctx.font="9px monospace";ctx.fillText(p.id,lc[0]+4,lc[1]-6);ctx.restore();
-  // HUD marker (only in 3D)
-  const hud=project(p.x,0.26,p.y);
-  ctx.save();ctx.strokeStyle=col;ctx.globalAlpha=0.5;ctx.lineWidth=1;
-  ctx.beginPath();ctx.arc(hud[0],hud[1],9,0,Math.PI*2);ctx.stroke();ctx.restore();
+  const lc=project(p.x, p.alt+0.02, p.y);
+  // declutter: only label airborne / rolling aircraft, skip dense taxi pile-ups
+  const showLabel = p.alt>0.004 || p.phase==="TAKEOFF ROLL" || p.phase==="LANDING" || p.phase==="ROLL-OUT" || p.phase==="APPROACH";
+  if(showLabel){
+    ctx.save(); ctx.font="9px monospace";
+    const label=p.id, tw=ctx.measureText(label).width;
+    ctx.fillStyle="rgba(2,6,12,0.65)"; ctx.fillRect(lc[0]+5, lc[1]-18, tw+6, 12);
+    ctx.fillStyle="rgba(225,237,240,0.95)"; ctx.fillText(label, lc[0]+8, lc[1]-9);
+    ctx.restore();
+  }
 }
-
 function drawGround3D(time){
   if(layersOn){drawGrid3D();drawRadar3D(time);}
-  drawRunway3D(runwayA(),time);drawRunway3D(runwayB(),time);drawTerminal3D(time);
+  drawRunway3D(runwayA(),time);drawRunway3D(runwayB(),time);drawTerminal3D();
 }
 function drawPlane(p){const col=TIER_COLORS[p.tier];
   if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
@@ -855,8 +960,8 @@ function frame(now){const dt=Math.min((now-lastT)/1000,0.05);lastT=now;
         drawGround3D(now);
         ambient+=dt; if(ambient>1.1&&planes.length<14){ambient=0;spawnPlane(pick([1,1,1,2,3]));}
         for(const p of planes)updatePlane(p,dt);
-        const sorted=planes.slice().sort((a,b)=>b.alt-a.alt);   // draw lowest first
-        for(const p of sorted)drawPlane3D(p,now);
+        const sorted=planes.slice().sort((a,b)=>depthKey(a.x,a.alt,a.y)-depthKey(b.x,b.alt,b.y));
+        for(const p of sorted)drawPlane3D(p);
       } else {
         ctx.translate(W/2,H/2); ctx.scale(zoom,zoom); ctx.translate(-W/2,-H/2);
         if(layersOn){drawGrid();drawRadar(now);}
@@ -882,7 +987,8 @@ function renderOps(m){
   setText("kT1",m.tier_usage?.tier1||0);
   setText("kT2",m.tier_usage?.tier2||0);
   setText("kT3",(m.tier_usage?.tier3)||0);
-  setText("kBreach",m.sla_breaches||0);
+  const breaches=m.sla_breaches||0; setText("kBreach",breaches);
+  const kb=document.getElementById("kBreach"); if(kb){kb.className="v"+(breaches>0?" e":" s");}
   const parts=m.partitions||{}; let cov=0,n=0;
   for(const k in parts){cov+=parts[k].avg_coverage;n++;}
   const covPct=n?(cov/n*100):0; setText("kCov",covPct.toFixed(0)+"%");
@@ -892,8 +998,8 @@ function renderOps(m){
   const keys=Object.keys(parts);
   if(!keys.length){nodes.innerHTML='<div class="empty">No partitions yet — run a solver or chaos replay.</div>';}
   else{
-    nodes.innerHTML=keys.map(k=>{const p=parts[k];const c=(p.avg_coverage*100).toFixed(0);const over=c>=95;
-      const dot=over?'<span class="dot e glow"></span>':'<span class="dot s glow"></span>';
+    nodes.innerHTML=keys.map(k=>{const p=parts[k];const c=(p.avg_coverage*100).toFixed(0);const healthy=c>=90;
+      const dot=healthy?'<span class="dot s glow"></span>':'<span class="dot e glow"></span>';
       return `<div class="node"><div class="top"><span class="nm">${k} / REGION</span>${dot}</div>
         <div class="bar"><span style="width:${c}%"></span></div>
         <div class="meta"><span>CAP ${c}%</span><span>${p.solves} SOLVES · ${(p.avg_time_s*1000).toFixed(0)}ms</span></div></div>`;}).join("");
