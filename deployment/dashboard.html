@@ -702,17 +702,35 @@ function spawnPlane(tier,opts){
 function lerp(a,b,t){return a+(b-a)*t;}
 function hash(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}return Math.abs(h);}
 function updatePlane(p,dt){
-  if(p.done)return; const {nodes,speeds}=p.path;
-  if(p.seg>=nodes.length-1){p.done=true;return;}
-  const a=nodes[p.seg],b=nodes[p.seg+1]; const sp=speeds[Math.min(p.seg,speeds.length-1)];
-  p.t+=sp*dt;
-  if(p.t>=1){p.t=0;p.seg++;
-    if(p.seg>=nodes.length-1){p.phase=p.path.kind==="out"?"AIRBORNE":"PARKED";p.done=(p.path.kind==="in");if(p.path.kind==="out"){p.seg=nodes.length-1;p.done=true;}if(p.done)return;}
-    else p.phase=phaseFor(p,p.seg);
+  if(p.done) return;
+  const {nodes,speeds} = p.path;
+  if(p.seg >= nodes.length-1){ p.done = true; return; }
+  const a = nodes[p.seg], b = nodes[p.seg+1];
+  const sp = speeds[Math.min(p.seg, speeds.length-1)];
+
+  // advance progress and carry any overshoot to avoid stutter when segments switch
+  p.t += sp * dt;
+  while(p.t >= 1){
+    p.t -= 1;
+    p.seg++;
+    if(p.seg >= nodes.length-1){
+      p.phase = p.path.kind === "out" ? "AIRBORNE" : "PARKED";
+      p.done = (p.path.kind === "in");
+      if(p.path.kind === "out"){ p.seg = nodes.length-1; p.done = true; }
+      if(p.done) return;
+    } else {
+      p.phase = phaseFor(p, p.seg);
+    }
   }
-  const nx=lerp(a[0],b[0],p.t),ny=lerp(a[1],b[1],p.t);
-  const dx=nx-p.x,dy=ny-p.y; if(dx||dy)p.angle=Math.atan2(dy,dx);
-  p.x=nx;p.y=ny;p.trail.push([p.x,p.y]); if(p.trail.length>26)p.trail.shift();
+
+  const nx = lerp(a[0], b[0], p.t), ny = lerp(a[1], b[1], p.t);
+  const dx = nx - p.x, dy = ny - p.y;
+  if(dx || dy){
+    const target = Math.atan2(dy, dx);
+    // smooth heading changes to reduce visual jitter
+    p.angle = (typeof p.angle === 'number') ? lerp(p.angle, target, Math.min(1, 0.33 + dt*2)) : target;
+  }
+  p.x = nx; p.y = ny; p.trail.push([p.x, p.y]); if(p.trail.length > 26) p.trail.shift();
   // 3D state: progress along full path drives climb / descent profile
   const n=nodes.length-1; const prog=(p.seg+p.t)/n;          // 0..1 along whole route
   const isOut=p.path.kind==="out";
@@ -997,7 +1015,7 @@ function drawPlane(p){const col=TIER_COLORS[p.tier];
   if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
     for(let i=1;i<p.trail.length;i++){const a=i/p.trail.length;ctx.strokeStyle=col;ctx.globalAlpha=a*0.45;
       ctx.beginPath();ctx.moveTo(p.trail[i-1][0]*W,p.trail[i-1][1]*H);ctx.lineTo(p.trail[i][0]*W,p.trail[i][1]*H);ctx.stroke();}ctx.restore();}
-  const x=p.x*W,y=p.y*H;ctx.save();ctx.translate(x,y);ctx.rotate(p.angle);ctx.shadowColor=col;ctx.shadowBlur=18;
+  const x=p.x*W,y=p.y*H;ctx.save();ctx.translate(x,y);ctx.rotate(p.angle);ctx.shadowColor=col;ctx.shadowBlur=8;
   const s=8; const bodyGrad=ctx.createLinearGradient(-18,-10,24,10); bodyGrad.addColorStop(0,col); bodyGrad.addColorStop(0.5,"#f3fbff"); bodyGrad.addColorStop(1,"#6fd6ff");
   ctx.fillStyle=bodyGrad;
   ctx.beginPath(); ctx.moveTo(-s*2.1,0); ctx.quadraticCurveTo(-s*1.1,-s*0.95, -s*0.3,-s*0.45); ctx.lineTo(s*1.15,-s*0.40); ctx.lineTo(s*1.8,-s*0.05); ctx.lineTo(s*1.15,s*0.40); ctx.lineTo(-s*0.3,s*0.45); ctx.quadraticCurveTo(-s*1.1,s*0.95,-s*2.1,0); ctx.closePath(); ctx.fill();
@@ -1009,7 +1027,8 @@ function drawPlane(p){const col=TIER_COLORS[p.tier];
   ctx.shadowBlur=0;ctx.restore();
   ctx.save();ctx.fillStyle="rgba(225,237,240,0.88)";ctx.font="9px monospace";ctx.fillText(p.id,x+9,y-7);ctx.restore();}
 let lastT=performance.now(),ambient=0;
-let zoom=1.0, iso3d=false, layersOn=true;
+// enable isometric 3D view by default for clearer runway/gate geometry
+let zoom=0.95, iso3d=true, layersOn=true;
 function frame(now){const dt=Math.min((now-lastT)/1000,0.05);lastT=now;
   if(document.getElementById("view-ops").classList.contains("active")){
     ctx.clearRect(0,0,W,H);
