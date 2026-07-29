@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkySolver Login</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: linear-gradient(135deg, #07111e, #10243a);
+      color: #eaf7ff;
+      height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+    .card {
+      width: min(92vw, 420px);
+      padding: 28px;
+      border-radius: 14px;
+      background: rgba(8, 19, 31, 0.9);
+      border: 1px solid rgba(172,237,255,0.25);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    }
+    h1 { margin-top: 0; font-size: 24px; }
+    .muted { color: #74a5bd; font-size: 13px; }
+    label { display: block; margin-top: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    input { width: 100%; padding: 10px 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #27445a; background: #091724; color: white; }
+    button { width: 100%; padding: 10px 12px; margin-top: 16px; border: none; border-radius: 8px; background: linear-gradient(90deg, #4cd7f6, #4ae176); color: #031018; font-weight: 700; cursor: pointer; }
+    .error { color: #ff9e9e; margin-top: 10px; font-size: 13px; display: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>SkySolver Mission Control</h1>
+    <div class="muted">Sign in to review recovery operations, passenger reaccommodation, and disruption telemetry.</div>
+    <label>Username</label>
+    <input id="username" value="ops" />
+    <label>Password</label>
+    <input id="password" type="password" value="sky2026" />
+    <button onclick="submitLogin()">Sign In</button>
+    <div id="error" class="error"></div>
+  </div>
+  <script>
+    async function submitLogin() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('error');
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await response.json();
+      if (data.ok) {
+        window.location.href = data.redirect;
+      } else {
+        errorEl.style.display = 'block';
+        errorEl.textContent = data.error || 'Login failed';
+      }
+    }
+  </script>
+</body>
+</html>

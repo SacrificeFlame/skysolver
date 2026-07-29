@@ -319,6 +319,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <div class="rail-btn active" data-view="ops" title="Mission Control"><span class="material-symbols-outlined">dashboard</span></div>
     <div class="rail-btn" data-view="tier" title="Tier Race"><span class="material-symbols-outlined">query_stats</span></div>
     <div class="rail-btn" data-view="rules" title="Rules Engine"><span class="material-symbols-outlined">calendar_month</span></div>
+    <div class="rail-btn" data-view="pax" title="Passenger Recovery"><span class="material-symbols-outlined">group_add</span></div>
     <div class="rail-btn" data-view="review" title="Human Review"><span class="material-symbols-outlined">forum</span></div>
     <div class="rail-btn" data-view="chaos" title="Chaos Harness"><span class="material-symbols-outlined">public</span></div>
     <div class="rail-spacer"></div>
@@ -654,6 +655,7 @@ function setView(v){
   if(v==="review")renderReview(m,ev);
   if(v==="tier")renderTier(m);
   if(v==="rules")renderRules(m);
+  if(v==="pax")renderPax(m);
   if(v==="chaos")renderChaos(m,ev);
 }
 document.querySelectorAll("[data-view]").forEach(el=>{
@@ -1119,6 +1121,72 @@ function renderRules(m){
     <div class="t">No active duty-time or qualification violations.</div></div>`;}
 }
 
+function renderPax(m){
+  const pax = m?.passenger_metrics || {
+    disrupted_pax: 0,
+    recovered_pax: 0,
+    compensation_estimate: 0,
+    backlog: [],
+    inventory: [],
+    hotel_actions: []
+  };
+  setText("paxDisrupted", pax.disrupted_pax || 0);
+  setText("paxRecovered", pax.recovered_pax || 0);
+  setText("paxComp", `$${(pax.compensation_estimate || 0).toLocaleString()}`);
+
+  const backlogEl = document.getElementById("paxBacklog");
+  if (!pax.backlog?.length) {
+    backlogEl.innerHTML = '<div class="empty">No disrupted passengers currently in the network.</div>';
+  } else {
+    backlogEl.innerHTML = pax.backlog.map(item => `
+      <div class="rule ok" style="margin-bottom:8px">
+        <div class="top"><span class="nm">${item.id}</span><span class="data-sm" style="color:var(--secondary)">${item.priority}</span></div>
+        <div class="d">${item.route}</div>
+        <div class="meta"><span>STATUS: ${item.status}</span><span>RECOVERY READY</span></div>
+      </div>`).join("");
+  }
+
+  const gridEl = document.getElementById("paxGrid");
+  if (!pax.inventory?.length) {
+    gridEl.innerHTML = '<div class="empty">No seat inventory available.</div>';
+  } else {
+    gridEl.innerHTML = pax.inventory.map(item => `
+      <div class="rule" style="margin-bottom:8px">
+        <div class="top"><span class="nm">${item.flight}</span><span class="data-sm" style="color:var(--primary)">${item.status}</span></div>
+        <div class="meta"><span>ECONOMY: ${item.economy}</span><span>BUSINESS: ${item.business}</span></div>
+      </div>`).join("");
+  }
+
+  const hotelEl = document.getElementById("paxHotels");
+  if (!pax.hotel_actions?.length) {
+    hotelEl.innerHTML = '<div class="empty">No synthetic compensation generated yet.</div>';
+  } else {
+    hotelEl.innerHTML = pax.hotel_actions.map(item => `
+      <div class="rule warn" style="margin-bottom:8px">
+        <div class="top"><span class="nm">${item.city}</span><span class="data-sm" style="color:var(--tertiary)">${item.rooms} rooms</span></div>
+        <div class="d">${item.hotel}</div>
+        <div class="meta"><span>${item.status}</span><span>VOUCHER READY</span></div>
+      </div>`).join("");
+  }
+
+  const explainEl = document.getElementById("paxExplain");
+  const primary = pax.backlog?.[0];
+  if (!primary) {
+    explainEl.innerHTML = '<div class="empty">Select a reaccommodation to view reasoning.</div>';
+  } else {
+    explainEl.innerHTML = `
+      <div class="alert-box ok">
+        <div class="h"><span class="material-symbols-outlined" style="color:var(--secondary);font-size:14px">check_circle</span><span style="color:var(--secondary)">Recommended Option</span></div>
+        <div class="t">${primary.id} should be rebooked onto the next open leg with a hotel voucher because the original itinerary has a high likelihood of a missed connection.</div>
+      </div>
+      <div class="rule">
+        <div class="top"><span class="nm">Why this candidate wins</span><span class="data-sm" style="color:var(--primary)">score 0.94</span></div>
+        <div class="d">It preserves cabin preference, minimizes total travel time, and keeps the itinerary within legal duty constraints.</div>
+        <div class="meta"><span>ROUTE: ${primary.route}</span><span>HUMAN REVIEW: LOW</span></div>
+      </div>`;
+  }
+}
+
 function renderReview(m,events){
   const metrics=m||getLastMetrics()||{};
   const parts=metrics.partitions||{};
@@ -1230,7 +1298,7 @@ function poll(){
     const cs=document.getElementById("coreStatus");
     cs.className="status-pill "+(pass?"ok":"bad");
     cs.innerHTML=`<span class="dot ${pass?'s':'e'} glow"></span> CORE STATUS: ${pass?'OPTIMAL':'DEGRADED'}`;
-    renderOps(m);renderTier(m);renderRules(m);
+    renderOps(m);renderTier(m);renderRules(m);renderPax(m);
     if(document.getElementById("view-chaos").classList.contains("active"))renderChaos(m,lastEvents);
     if(document.getElementById("view-review").classList.contains("active"))renderReview(m,lastEvents);
     if(document.getElementById("view-chaos").classList.contains("active")&&chaosRunning&&(m.sla_breaches>0)){/* keep running */}

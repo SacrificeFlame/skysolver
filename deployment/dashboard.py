@@ -16,6 +16,11 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
+from passengers.engine import PassengerRecoveryEngine
+from passengers.event_store import PassengerEventStore
+from passengers.models import Passenger, PassengerStatus
+from passengers.routes.generator import FlightEdge, ItineraryGenerator
+
 # Project root (parent of deployment/) — holds index.html + stitch/ assets.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -46,6 +51,25 @@ _metrics: Dict[str, Any] = {
     "total_solves": 0,
     "cross_partition_moves": 0,
     "legal_violations": 0,
+    "passenger_metrics": {
+        "disrupted_pax": 38,
+        "recovered_pax": 24,
+        "compensation_estimate": 18250,
+        "backlog": [
+            {"id": "P-104", "route": "LAX → DEN → ORD", "priority": "High", "status": "Rebooked"},
+            {"id": "P-221", "route": "SEA → DFW → JFK", "priority": "Medium", "status": "Hotel required"},
+            {"id": "P-387", "route": "BOS → ATL → MIA", "priority": "Critical", "status": "Standby"},
+        ],
+        "inventory": [
+            {"flight": "AA118", "economy": "7/12", "business": "2/4", "status": "Open"},
+            {"flight": "UA512", "economy": "3/9", "business": "4/4", "status": "Limited"},
+            {"flight": "DL221", "economy": "11/14", "business": "1/3", "status": "Open"},
+        ],
+        "hotel_actions": [
+            {"city": "Chicago", "hotel": "Westin O’Hare", "rooms": 6, "status": "Assigned"},
+            {"city": "Dallas", "hotel": "Hyatt Regency", "rooms": 3, "status": "Pending"},
+        ],
+    },
 }
 
 # In-memory rolling event feed (capped). Persisted to file too so a fresh
@@ -55,9 +79,108 @@ _EVENTS_FILE = ".sky_events.json"
 _EVENT_CAP = 200
 
 
+def _build_passenger_metrics(base_metrics: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Create passenger metrics from the passenger recovery engine state."""
+    base_metrics = base_metrics or {}
+    graph = {
+        "LAX": [
+            FlightEdge(flight_id="AA118", origin="LAX", destination="DEN", score=0.94),
+            FlightEdge(flight_id="UA512", origin="LAX", destination="ORD", score=0.91),
+        ],
+        "DEN": [
+            FlightEdge(flight_id="DL221", origin="DEN", destination="ORD", score=0.92),
+        ],
+        "ORD": [],
+    }
+    generator = ItineraryGenerator(graph)
+    engine = PassengerRecoveryEngine(PassengerEventStore())
+
+    sample_passengers = [
+        Passenger(passenger_id="P-104", pnr="PNR-104", origin="LAX", destination="ORD", current_airport="LAX", cabin="business", frequent_flyer_tier=2, medical_requirements=["wheelchair"], wheelchair_required=True),
+        Passenger(passenger_id="P-221", pnr="PNR-221", origin="SEA", destination="JFK", current_airport="SEA", cabin="economy", frequent_flyer_tier=1, minor=True),
+        Passenger(passenger_id="P-387", pnr="PNR-387", origin="BOS", destination="MIA", current_airport="BOS", cabin="first", frequent_flyer_tier=3),
+    ]
+
+    backlog = []
+    recovered = 0
+    compensation = 0
+    for passenger in sample_passengers:
+        routes = generator.generate(passenger.origin, passenger.destination, max_options=3)
+        if not routes:
+            continue
+        decision = engine.recover(passenger, routes)
+        if decision.status == PassengerStatus.REBOOKED:
+            recovered += 1
+        status = "Rebooked" if decision.status == PassengerStatus.REBOOKED else "Standby"
+        priority = "Critical" if passenger.medical_requirements or passenger.wheelchair_required else "Medium"
+        backlog.append({
+            "id": passenger.passenger_id,
+            "route": f"{passenger.origin} → {passenger.destination}",
+            "priority": priority,
+            "status": status,
+        })
+        compensation += 320 + (passenger.frequent_flyer_tier * 120)
+
+    inventory = [
+        {"flight": "AA118", "economy": "7/12", "business": "2/4", "status": "Open"},
+        {"flight": "UA512", "economy": "3/9", "business": "4/4", "status": "Limited"},
+        {"flight": "DL221", "economy": "11/14", "business": "1/3", "status": "Open"},
+    ]
+    hotel_actions = [
+        {"city": "Chicago", "hotel": "Westin O’Hare", "rooms": 6, "status": "Assigned"},
+        {"city": "Dallas", "hotel": "Hyatt Regency", "rooms": 3, "status": "Pending"},
+    ]
+
+    return {
+        "disrupted_pax": len(backlog),
+        "recovered_pax": recovered,
+        "compensation_estimate": compensation + (base_metrics.get("sla_breaches", 0) * 750),
+        "backlog": backlog,
+        "inventory": inventory,
+        "hotel_actions": hotel_actions,
+    }
+
+
 # --------------------------------------------------------------------------
 # Storage helpers
 # --------------------------------------------------------------------------
+
+def _seed_demo_state() -> None:
+    global _metrics, _events
+    if os.path.exists(_METRICS_FILE) and os.path.exists(_EVENTS_FILE):
+        return
+
+    _metrics.update({
+        "start_time": datetime.now().isoformat(),
+        "partitions": {
+            "DEN": {"solves": 14, "avg_coverage": 0.96, "avg_time_s": 0.31, "last_tier": 1},
+            "ORD": {"solves": 11, "avg_coverage": 0.92, "avg_time_s": 0.38, "last_tier": 2},
+            "ATL": {"solves": 9, "avg_coverage": 0.88, "avg_time_s": 0.46, "last_tier": 1},
+            "LAX": {"solves": 8, "avg_coverage": 0.91, "avg_time_s": 0.42, "last_tier": 1},
+        },
+        "sla_breaches": 1,
+        "tier_usage": {"tier1": 18, "tier2": 6, "tier3": 4},
+        "total_solves": 28,
+        "cross_partition_moves": 3,
+        "legal_violations": 1,
+        "passenger_metrics": _build_passenger_metrics({
+            "sla_breaches": 1,
+            "partitions": {
+                "DEN": {"avg_coverage": 0.96},
+            },
+        }),
+    })
+
+    _events[:] = [
+        {"ts": datetime.now().isoformat(), "kind": "solve", "partition": "DEN", "tier": 1, "coverage": 0.96, "elapsed_s": 0.31},
+        {"ts": datetime.now().isoformat(), "kind": "solve", "partition": "ORD", "tier": 2, "coverage": 0.92, "elapsed_s": 0.38},
+        {"ts": datetime.now().isoformat(), "kind": "xpartition", "partition": "ATL"},
+        {"ts": datetime.now().isoformat(), "kind": "sla_breach", "partition": "LAX"},
+    ]
+
+    _save_metrics()
+    _save_events()
+
 
 def _load_metrics() -> Dict[str, Any]:
     if os.path.exists(_METRICS_FILE):
@@ -66,6 +189,7 @@ def _load_metrics() -> Dict[str, Any]:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             pass
+    _seed_demo_state()
     return _metrics
 
 
@@ -84,7 +208,8 @@ def _load_events() -> List[Dict[str, Any]]:
                 return json.load(f)[-_EVENT_CAP:]
         except (json.JSONDecodeError, OSError):
             pass
-    return []
+    _seed_demo_state()
+    return _events[-_EVENT_CAP:]
 
 
 def _save_events() -> None:
@@ -158,6 +283,8 @@ def get_metrics() -> Dict[str, Any]:
     """Get current metrics snapshot (merged with shared file)."""
     global _metrics
     _metrics = _load_metrics()
+    if "passenger_metrics" not in _metrics or not _metrics["passenger_metrics"]:
+        _metrics["passenger_metrics"] = _build_passenger_metrics(_metrics)
     start = _metrics["start_time"]
     try:
         start_dt = datetime.fromisoformat(start) if isinstance(start, str) else start
@@ -231,9 +358,9 @@ def trigger_chaos() -> str:
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
-        if path in ("/", "/index.html", "/ops"):
-            self._serve_dashboard()
-        elif path == "/ops":
+        if path in ("/", "/login", "/index.html"):
+            self._serve_login()
+        elif path in ("/dashboard", "/ops"):
             self._serve_dashboard()
         elif path == "/api/metrics":
             self._serve_json(get_metrics())
@@ -241,6 +368,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_json(_load_events())
         elif path == "/api/health":
             self._serve_json({"status": "healthy"})
+        elif path == "/api/login":
+            self._serve_json({"ok": True, "redirect": "/dashboard"})
         elif path.startswith("/stitch/"):
             # Serve pulled Stitch screen assets (html + png) from project root.
             rel = os.path.normpath(path.lstrip("/")).replace("\\", "/")
@@ -263,19 +392,47 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html.encode("utf-8"))
 
+    def _serve_login(self):
+        login_path = os.path.join(os.path.dirname(__file__), "login.html")
+        try:
+            with open(login_path, "r", encoding="utf-8") as f:
+                html = f.read()
+        except OSError:
+            html = "<h1>Login page missing</h1>"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(html.encode("utf-8"))
+
     def do_POST(self):
         path = self.path.split("?")[0]
         if path == "/api/chaos":
             self._serve_json({"status": trigger_chaos()})
+        elif path == "/api/login":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8")
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = {}
+            user = payload.get("username", "")
+            password = payload.get("password", "")
+            if user == "ops" and password == "sky2026":
+                self._serve_json({"ok": True, "redirect": "/dashboard"})
+            else:
+                self._serve_json({"ok": False, "error": "Invalid credentials"}, status=401)
         else:
             self._serve_404()
 
-    def _serve_json(self, data):
-        self.send_response(200)
+    def _serve_json(self, data, status=200):
+        body = json.dumps(data, default=str).encode()
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(json.dumps(data, default=str).encode())
+        self.wfile.write(body)
 
     def _serve_static(self, fs_path: str):
         ext = os.path.splitext(fs_path)[1].lower()
@@ -303,6 +460,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 def run_dashboard(port: int = 8501):
     """Run the dashboard HTTP server."""
+    _seed_demo_state()
     server = HTTPServer(("0.0.0.0", port), DashboardHandler)
     print(f"SkySolver v2 Dashboard (Live Airport Ops Center) -> http://localhost:{port}")
     server.serve_forever()
