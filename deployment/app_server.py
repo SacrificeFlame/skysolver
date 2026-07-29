@@ -2,10 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
-from deployment.dashboard import get_metrics, _load_events, record_solve, record_sla_breach
+ROOT = Path(__file__).resolve().parent.parent
+for candidate in (str(ROOT), str(ROOT / "deployment")):
+    if candidate not in sys.path:
+        sys.path.insert(0, candidate)
+
+try:
+    from deployment.dashboard import get_metrics, _load_events, record_solve, record_sla_breach
+except ModuleNotFoundError:
+    from dashboard import get_metrics, _load_events, record_solve, record_sla_breach
 
 
 class AppHandler(BaseHTTPRequestHandler):
