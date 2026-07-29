@@ -880,27 +880,41 @@ function drawRadar3D(time){
 }
 function drawRunway3D(rwy,time){
   const [sx,sz]=rwy.s, [ex,ez]=rwy.e; ctx.save();
-  // runway as a flat ribbon with slight width in isometric
   const dx=ex-sx, dz=ez-sz, len=Math.hypot(dx,dz)||1;
-  const nx=(-dz/len)*0.012, nz=(dx/len)*0.012;
+  const nx=(-dz/len)*0.014, nz=(dx/len)*0.014;
   const corners=[
     project(sx-nx,0,sz-nz), project(sx+nx,0,sz+nz),
     project(ex+nx,0,ez+nz), project(ex-nx,0,ez-nz)
   ];
-  ctx.fillStyle="rgba(40,60,90,0.55)"; ctx.strokeStyle="rgba(120,150,190,0.35)"; ctx.lineWidth=1;
+  ctx.fillStyle="rgba(32,46,70,0.88)";
+  ctx.strokeStyle="rgba(150,190,230,0.45)";
+  ctx.lineWidth=1.2;
   ctx.beginPath();
   ctx.moveTo(corners[0][0],corners[0][1]);
   for(let i=1;i<4;i++) ctx.lineTo(corners[i][0],corners[i][1]);
   ctx.closePath(); ctx.fill(); ctx.stroke();
-  // centerline
+
+  // runway edge markings
+  ctx.strokeStyle="rgba(255,255,255,0.65)";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(corners[0][0],corners[0][1]);
+  ctx.lineTo(corners[3][0],corners[3][1]);
+  ctx.moveTo(corners[1][0],corners[1][1]);
+  ctx.lineTo(corners[2][0],corners[2][1]);
+  ctx.stroke();
+
+  // centerline dashes
   const a=project(sx,0,sz), b=project(ex,0,ez);
-  ctx.strokeStyle="rgba(220,235,255,0.55)"; ctx.lineWidth=1.4; ctx.setLineDash([8,8]);
+  ctx.strokeStyle="rgba(255,255,255,0.55)"; ctx.lineWidth=1.6; ctx.setLineDash([12,10]);
   ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke(); ctx.setLineDash([]);
-  const n=9, blink=(Math.sin(time*0.004)>0);
+
+  const n=10, blink=(Math.sin(time*0.004)>0);
   for(let i=0;i<=n;i++){
     const t=i/n; const p=project(lerp(sx,ex,t),0,lerp(sz,ez,t));
-    ctx.fillStyle=blink?"rgba(255,240,180,0.95)":"rgba(255,240,180,0.25)";
-    ctx.beginPath(); ctx.arc(p[0],p[1],1.8,0,Math.PI*2); ctx.fill();
+    const alpha = blink ? 0.95 : 0.35;
+    ctx.fillStyle = `rgba(255,240,180,${alpha})`;
+    ctx.beginPath(); ctx.arc(p[0],p[1],1.6,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
@@ -926,14 +940,20 @@ function drawBox3D(x0,z0,x1,z1,h,fill,stroke){
 }
 function drawTerminal3D(){
   ctx.save();
-  const x0=GATE_X0-0.01, x1=GATE_X0+(N_GATES-1)*GATE_DX+0.01;
-  const z0=GATE_Y, z1=GATE_Y+0.06;
-  drawBox3D(x0,z0,x1,z1,0.045,"rgba(25,42,72,0.85)","rgba(80,140,220,0.4)");
+  const x0=GATE_X0-0.014, x1=GATE_X0+(N_GATES-1)*GATE_DX+0.014;
+  const z0=GATE_Y-0.008, z1=GATE_Y+0.06;
+  drawBox3D(x0,z0,x1,z1,0.045,"rgba(32,54,86,0.95)","rgba(130,180,235,0.55)");
+  ctx.fillStyle = "rgba(172,237,255,0.12)";
+  for(let i=0;i<3;i++){
+    const gx = x0 + (x1-x0) * (0.2 + i*0.18);
+    const p = project(gx, 0.033, z0+0.012);
+    ctx.beginPath(); ctx.arc(p[0], p[1], 5, 0, Math.PI*2); ctx.fill();
+  }
   for(let i=0;i<N_GATES;i++){
     const gx=gateX(i);
     const p=project(gx,0.01,GATE_Y-0.008);
-    ctx.fillStyle="rgba(172,237,255,0.45)";
-    ctx.fillRect(p[0]-3,p[1]-2,6,3);
+    ctx.fillStyle="rgba(172,237,255,0.55)";
+    ctx.beginPath(); ctx.arc(p[0],p[1],2.5,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
@@ -1008,8 +1028,34 @@ function drawPlane3D(p){
   }
 }
 function drawGround3D(time){
+  ctx.save();
+  const bg = ctx.createRadialGradient(W*0.52, H*0.36, 1, W*0.52, H*0.36, Math.max(W, H) * 0.9);
+  bg.addColorStop(0, "rgba(12,24,44,1)");
+  bg.addColorStop(0.35, "rgba(8,18,33,1)");
+  bg.addColorStop(1, "rgba(0,4,10,1)");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  ctx.save();
+  const apron = [
+    window.project(0.08, 0, 0.64),
+    window.project(0.92, 0, 0.64),
+    window.project(0.92, 0, 0.94),
+    window.project(0.08, 0, 0.94)
+  ];
+  ctx.fillStyle = "rgba(24,40,60,0.85)";
+  ctx.beginPath();
+  ctx.moveTo(apron[0][0], apron[0][1]);
+  apron.slice(1).forEach(p => ctx.lineTo(p[0], p[1]));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
   if(layersOn){drawGrid3D();drawRadar3D(time);}
-  drawRunway3D(runwayA(),time);drawRunway3D(runwayB(),time);drawTerminal3D();
+  drawRunway3D(runwayA(),time);
+  drawRunway3D(runwayB(),time);
+  drawTerminal3D();
 }
 function drawPlane(p){const col=TIER_COLORS[p.tier];
   if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
