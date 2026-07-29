@@ -675,29 +675,31 @@ function resizeCanvas(){
 }
 window.addEventListener("resize", resizeCanvas);
 
-function runwayA(){return {s:[0.13,0.66],e:[0.93,0.20]};}
-function runwayB(){return {s:[0.05,0.46],e:[0.80,0.07]};}
-const GATE_Y=0.88,GATE_TOP=0.76,TAXI_Y=0.70,GATE_X0=0.05,GATE_DX=0.026,N_GATES=11;
+function runwayA(){return {id:"A",s:[0.13,0.66],e:[0.93,0.20],labelStart:"33L",labelEnd:"15R"};}
+function runwayB(){return {id:"B",s:[0.11,0.74],e:[0.91,0.28],labelStart:"33R",labelEnd:"15L"};}
+const GATE_Y=0.88,GATE_TOP=0.76,TAXI_Y=0.72,GATE_X0=0.05,GATE_DX=0.026,N_GATES=11;
 function gateX(i){return GATE_X0+(i%N_GATES)*GATE_DX;}
-let planes=[]; let seq=0; const MAX_PLANES=70;
+let planes=[]; let seq=0; const MAX_PLANES=70; let runwayLock=null;
 function rnd(a,b){return a+Math.random()*(b-a);}
 function pick(a){return a[(Math.random()*a.length)|0];}
 function makeFlightId(){const p=["SK","AA","UA","DL","WN"];return p[(Math.random()*5)|0]+(100+((Math.random()*899)|0));}
+function runwayOccupied(){return runwayLock!==null;}
+function claimRunway(p){if(!runwayLock){runwayLock=p.runwayId; p.hold=false; return true;} return runwayLock===p.runwayId;}
+function releaseRunway(p){if(runwayLock===p.runwayId) runwayLock=null;}
 /* Speeds are in "fraction of segment per second". Airborne = fast, but on final
    approach / roll-out / taxi a real aircraft is crawling. Tuned so a full
    taxi→takeoff→climb plays over ~25-40s and a landing rolls out gently. */
-function outboundPath(g,r){return {nodes:[[gateX(g),GATE_Y],[gateX(g),GATE_TOP],[0.16,TAXI_Y],r.s,r.e,[r.e[0]+0.05,r.e[1]-0.12]],speeds:[0.018,0.026,0.032,0.07,0.11],kind:"out"};}
-function inboundPath(g,r){return {nodes:[[r.e[0]+0.05,r.e[1]-0.12],r.e,r.s,[0.16,TAXI_Y],[gateX(g),GATE_TOP],[gateX(g),GATE_Y]],speeds:[0.09,0.07,0.04,0.026,0.018],kind:"in"};}
+function outboundPath(g,r){return {nodes:[[gateX(g),GATE_Y],[gateX(g),GATE_TOP],[gateX(g),TAXI_Y],[0.16,TAXI_Y],r.s,r.e,[r.e[0]+0.05,r.e[1]-0.12]],speeds:[0.018,0.026,0.032,0.032,0.07,0.11],kind:"out"};}
+function inboundPath(g,r){return {nodes:[[r.e[0]+0.05,r.e[1]-0.12],r.e,r.s,[0.16,TAXI_Y],[gateX(g),TAXI_Y],[gateX(g),GATE_TOP],[gateX(g),GATE_Y]],speeds:[0.09,0.07,0.04,0.032,0.026,0.018],kind:"in"};}
 function spawnPlane(tier,opts){
   if(planes.length>=MAX_PLANES)return; opts=opts||{};
   const r=Math.random()<0.5?runwayA():runwayB(); const g=(seq)%N_GATES;
   const isOut=opts.kind?opts.kind==="out":Math.random()<0.55;
   const path=isOut?outboundPath(g,r):inboundPath(g,r); seq++;
-  // small lateral jitter so isometric gate cluster doesn't fully stack
   const jx=(Math.random()-0.5)*0.012, jz=(Math.random()-0.5)*0.008;
-  planes.push({id:makeFlightId(tier),tier,partition:opts.partition||pick(HUBS),path,seg:0,t:0,
+  planes.push({id:makeFlightId(tier),tier,partition:opts.partition||pick(HUBS),path,runwayId:r.id,seg:0,t:0,
     x:path.nodes[0][0]+jx,y:path.nodes[0][1]+jz,angle:0,trail:[],done:false,phase:isOut?"TAXI OUT":"APPROACH",spawn:performance.now(),
-    alt:0,pitch:0,jx,jz});
+    alt:0,pitch:0,jx,jz,hold:false});
 }
 function lerp(a,b,t){return a+(b-a)*t;}
 function hash(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}return Math.abs(h);}
@@ -705,21 +707,37 @@ function updatePlane(p,dt){
   if(p.done) return;
   const {nodes,speeds} = p.path;
   if(p.seg >= nodes.length-1){ p.done = true; return; }
+
   const a = nodes[p.seg], b = nodes[p.seg+1];
   const sp = speeds[Math.min(p.seg, speeds.length-1)];
 
-  // advance progress and carry any overshoot to avoid stutter when segments switch
-  p.t += sp * dt;
+  // hold short / go-around logic for runway access
+  const nextT = p.t + sp * dt;
+  if(p.path.kind==="out" && p.seg===3 && !claimRunway(p) && nextT >= 0.02){
+    p.t = Math.min(p.t, 0.98);
+    p.phase = "HOLD SHORT";
+    p.hold = true;
+    return;
+  }
+  if(p.path.kind==="in" && p.seg===0 && !claimRunway(p) && nextT >= 0.85){
+    p.t = Math.min(p.t, 0.85);
+    p.phase = p.hold?"GO-AROUND":"HOLD OVER";
+    p.hold = true;
+    return;
+  }
+
+  p.t = nextT;
   while(p.t >= 1){
     p.t -= 1;
     p.seg++;
     if(p.seg >= nodes.length-1){
       p.phase = p.path.kind === "out" ? "AIRBORNE" : "PARKED";
-      p.done = (p.path.kind === "in");
-      if(p.path.kind === "out"){ p.seg = nodes.length-1; p.done = true; }
-      if(p.done) return;
+      if(p.path.kind === "in"){ p.done = true; releaseRunway(p); return; }
+      if(p.path.kind === "out"){ p.seg = nodes.length-1; p.done = true; releaseRunway(p); return; }
     } else {
       p.phase = phaseFor(p, p.seg);
+      if(p.phase === "TAKEOFF ROLL" || p.phase === "LANDING"){ claimRunway(p); p.hold=false; }
+      if(p.phase === "ROLL-OUT" && p.path.kind === "in"){ releaseRunway(p); }
     }
   }
 
@@ -727,21 +745,19 @@ function updatePlane(p,dt){
   const dx = nx - p.x, dy = ny - p.y;
   if(dx || dy){
     const target = Math.atan2(dy, dx);
-    // smooth heading changes to reduce visual jitter
     p.angle = (typeof p.angle === 'number') ? lerp(p.angle, target, Math.min(1, 0.33 + dt*2)) : target;
   }
   p.x = nx; p.y = ny; p.trail.push([p.x, p.y]); if(p.trail.length > 26) p.trail.shift();
-  // 3D state: progress along full path drives climb / descent profile
-  const n=nodes.length-1; const prog=(p.seg+p.t)/n;          // 0..1 along whole route
+  const n=nodes.length-1; const prog=(p.seg+p.t)/n;
   const isOut=p.path.kind==="out";
-  const CRZ=0.18;                                            // cruise altitude (world units)
+  const CRZ=0.18;
   if(isOut) p.alt = prog<0.6 ? 0 : Math.min(CRZ,(prog-0.6)/0.4*CRZ);
   else      p.alt = prog>0.4 ? 0 : Math.min(CRZ,(0.4-prog)/0.4*CRZ);
-  p.pitch = isOut ? (p.alt>0.005?-0.32:0) : (p.alt>0.005?0.32:0);  // nose up on climb, down on approach
+  p.pitch = isOut ? (p.alt>0.005?-0.32:0) : (p.alt>0.005?0.32:0);
 }
 function phaseFor(p,seg){
   if(p.path.kind==="out"){if(seg<=2)return "TAXI OUT";if(seg===3)return "TAKEOFF ROLL";return "CLIMB";}
-  if(seg===0)return "APPROACH";if(seg===1)return "LANDING";if(seg===2)return "ROLL-OUT";return "TAXI IN";
+  if(seg===0)return p.hold?"HOLD OVER":"APPROACH";if(seg===1)return "LANDING";if(seg===2)return "ROLL-OUT";return "TAXI IN";
 }
 function drawGrid(){
   ctx.save();
@@ -779,13 +795,20 @@ function drawGrid(){
     ctx.beginPath(); ctx.moveTo(x,y-10); ctx.lineTo(x,y+10); ctx.stroke();
   });
 
-  ctx.fillStyle="rgba(172,237,255,0.9)"; ctx.font="12px 'Segoe UI', sans-serif";
-  ctx.fillText("RUNWAY 27L", W*0.34, H*0.28);
-  ctx.fillText("RUNWAY 09R", W*0.22, H*0.40);
-
   drawRunway(runwayA(),performance.now());
   drawRunway(runwayB(),performance.now());
+  drawRunwayLabel(runwayA());
+  drawRunwayLabel(runwayB());
   drawTerminal(performance.now());
+  ctx.restore();
+}
+function drawRunwayLabel(rwy){
+  const [sx,sy]=rwy.s, [ex,ey]=rwy.e;
+  const x1=sx*W, y1=sy*H, x2=ex*W, y2=ey*H;
+  const angle=Math.atan2(y2-y1,x2-x1);
+  ctx.save(); ctx.font="11px 'Segoe UI', sans-serif"; ctx.fillStyle="rgba(172,237,255,0.92)";
+  ctx.translate(x1,y1); ctx.rotate(angle); ctx.fillText(rwy.labelStart, 8,-6);
+  ctx.translate(x2-x1,y2-y1); ctx.rotate(Math.PI); ctx.fillText(rwy.labelEnd, 8,-6);
   ctx.restore();
 }
 function drawRadar(time){const cx=W*0.5,cy=H*0.44,R=Math.min(W,H)*0.62;ctx.save();ctx.translate(cx,cy);
@@ -1131,12 +1154,14 @@ function renderOps(m){
   }
   // active flights
   const fl=document.getElementById("opsFlights");
-  fl.innerHTML = planes.length? planes.slice(-8).reverse().map(p=>
-    `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-family:'JetBrains Mono';font-size:11px">
+  fl.innerHTML = planes.length? planes.slice(-8).reverse().map(p=>{
+    const status = p.hold ? `${p.phase} (${p.runwayId})` : `${p.phase}`;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-family:'JetBrains Mono';font-size:11px">
       <span class="dot" style="background:${TIER_COLORS[p.tier]};box-shadow:0 0 6px ${TIER_COLORS[p.tier]}"></span>
       <span style="width:54px;font-weight:700">${p.id}</span>
-      <span style="flex:1;color:var(--on-surface-variant)">${p.phase}</span>
-      <span style="color:var(--primary);font-size:10px">${p.partition}</span></div>`).join("")
+      <span style="flex:1;color:var(--on-surface-variant)">${status}</span>
+      <span style="color:var(--primary);font-size:10px">${p.partition}</span></div>`;
+  }).join("")
     : '<div class="empty">No active flights.</div>';
 }
 
