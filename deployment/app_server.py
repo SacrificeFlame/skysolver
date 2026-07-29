@@ -61,7 +61,8 @@ class AppHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run_app(port=8000):
+def run_app(port=None):
+    port = int(port or os.environ.get("PORT", "8000"))
     server = HTTPServer(("0.0.0.0", port), AppHandler)
     print(f"SkySolver UI listening on http://localhost:{port}")
     server.serve_forever()
