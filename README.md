@@ -20,6 +20,14 @@ SkySolver is a prototype resilient crew rescheduling engine designed around grac
 - deployment/dashboard.py: observability dashboard
 - chaos/replay.py: Elliott-scale SLA test harness
 
+## Running the web app
+
+```bash
+python main.py
+```
+
+This starts the canonical dashboard server used locally and by Railway.
+
 ## Running tests
 
 ```bash

@@ -54,3 +54,23 @@ def test_passenger_metrics_are_derived_from_recovery_engine():
     assert metrics["backlog"]
     assert metrics["inventory"]
     assert metrics["hotel_actions"]
+
+
+def test_rules_validate_endpoint_records_event():
+    status, ctype, body = _request("/api/rules/validate", method="POST", body=b"{}")
+    assert status == 200
+    assert ctype == "application/json"
+    data = json.loads(body)
+    assert data["status"] == "ok"
+    assert data["action"] == "validate"
+
+
+def test_review_action_endpoint_records_event():
+    payload = json.dumps({"action": "approve", "case_id": "SK-921-TRIAGE"}).encode("utf-8")
+    status, ctype, body = _request("/api/review/action", method="POST", body=payload)
+    assert status == 200
+    assert ctype == "application/json"
+    data = json.loads(body)
+    assert data["status"] == "ok"
+    assert data["action"] == "approve"
+    assert data["case_id"] == "SK-921-TRIAGE"

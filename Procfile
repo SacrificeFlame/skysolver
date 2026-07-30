@@ -1,1 +1,1 @@
-web: python deployment/app_server.py
+web: python main.py

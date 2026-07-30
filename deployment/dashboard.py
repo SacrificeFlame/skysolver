@@ -279,6 +279,20 @@ def record_cross_partition_move():
     _save_events()
 
 
+def record_ui_action(kind: str, detail: str = "", partition: str = "GLOBAL"):
+    """Record a dashboard-triggered operational event for the live feed."""
+    global _metrics, _events
+    _metrics = _load_metrics()
+    _events.append({
+        "ts": datetime.now().isoformat(),
+        "kind": kind,
+        "partition": partition,
+        "detail": detail,
+    })
+    _events = _events[-_EVENT_CAP:]
+    _save_events()
+
+
 def get_metrics() -> Dict[str, Any]:
     """Get current metrics snapshot (merged with shared file)."""
     global _metrics
@@ -409,6 +423,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/chaos":
             self._serve_json({"status": trigger_chaos()})
+        elif path == "/api/rules/validate":
+            record_ui_action("rules_validate", "Rules stack validated")
+            self._serve_json({"status": "ok", "action": "validate"})
+        elif path == "/api/rules/deploy":
+            record_ui_action("rules_deploy", "Rules stack deployed")
+            self._serve_json({"status": "ok", "action": "deploy"})
+        elif path == "/api/rules/execute":
+            record_ui_action("rules_execute", "Simulation executed")
+            self._serve_json({"status": "ok", "action": "execute"})
+        elif path == "/api/review/action":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = {}
+            action = str(payload.get("action", "review"))
+            case_id = str(payload.get("case_id", "current"))
+            record_ui_action(f"review_{action}", f"Review action {action} for {case_id}")
+            self._serve_json({"status": "ok", "action": action, "case_id": case_id})
         elif path == "/api/login":
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length).decode("utf-8")

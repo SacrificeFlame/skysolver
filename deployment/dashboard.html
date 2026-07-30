@@ -333,7 +333,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: OPS ---------- -->
     <section class="view active" id="view-ops">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">LIVE OPS NETWORK · REGIONAL PARTITIONING</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">LIVE OPS NETWORK · flights, airport status, and live events</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Active Concurrency</span><span class="val p" id="opsConc">0 NODES</span></div>
           <div class="stat"><span class="label-caps">Global Sync</span><span class="val" id="opsSync">99.98%</span></div>
@@ -384,7 +384,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: TIER RACE ---------- -->
     <section class="view" id="view-tier">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">TIER_RACE_PROTOCOL_V4.2</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">TIER RACE · which regions are handling work best</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Tier 1 (Heuristic)</span><span class="val p" id="tierT1">0</span></div>
           <div class="stat"><span class="label-caps">Tier 2 (Optimizer)</span><span class="val s" id="tierT2">0</span></div>
@@ -394,16 +394,16 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
       <div class="grid3">
         <div class="col">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Crew Leaderboard</span><span class="label-caps" style="color:var(--outline)">AUTO_REFRESH 1s</span></h3>
+            <h3><span class="label-caps">Crew Leaderboard</span><span class="label-caps" style="color:var(--outline)">TOP RANK = BEST COVERAGE</span></h3>
             <div class="body" id="tierLead"></div>
           </div>
         </div>
         <div class="col mid">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Resolution Grid Delta</span>
-              <span style="display:flex;gap:6px"><span class="chip" style="font-family:'JetBrains Mono';font-size:9px;padding:2px 8px;color:var(--primary);border:1px solid rgba(172,237,255,.3);border-radius:3px">LAYER_01</span></span>
+            <h3><span class="label-caps">What Tier Race Means</span>
+              <span style="display:flex;gap:6px"><span class="chip" style="font-family:'JetBrains Mono';font-size:9px;padding:2px 8px;color:var(--primary);border:1px solid rgba(172,237,255,.3);border-radius:3px">READABLE VIEW</span></span>
             </h3>
-            <div class="res-grid" id="resGrid"></div>
+            <div class="body" id="tierGuide" style="display:flex;flex-direction:column;gap:8px"></div>
           </div>
           <div class="panel glass">
             <h3><span class="label-caps">Tier Velocity Chart</span></h3>
@@ -422,7 +422,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: RULES ---------- -->
     <section class="view" id="view-rules">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">FAR_117 COMPLIANCE · RULES ENGINE</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">RULES ENGINE · crew limits, rest time, and compliance</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Legal Violations</span><span class="val e" id="rulesViol">0</span></div>
           <div class="stat"><span class="label-caps">Fleet Efficiency</span><span class="val s" id="rulesEff">0%</span></div>
@@ -492,7 +492,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: PASSENGERS ---------- -->
     <section class="view" id="view-pax">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">PASSENGER RECOVERY &amp; REACCOMMODATION</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">PASSENGER RECOVERY · who is disrupted and how they get rebooked</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Disrupted Pax</span><span class="val e" id="paxDisrupted">0</span></div>
           <div class="stat"><span class="label-caps">Reaccommodated</span><span class="val s" id="paxRecovered">0</span></div>
@@ -534,7 +534,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: REVIEW ---------- -->
     <section class="view" id="view-review">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">TIER 3 · HUMAN-ASSISTED TRIAGE</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">HUMAN REVIEW · cases that need a person to decide</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Open Cases</span><span class="val e" id="revOpen">0</span></div>
           <div class="stat"><span class="label-caps">Resolved</span><span class="val s" id="revResolved">0</span></div>
@@ -565,7 +565,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
     <!-- ---------- VIEW: CHAOS ---------- -->
     <section class="view" id="view-chaos">
       <div class="strip glass">
-        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">CHAOS / REPLAY HARNESS · ELLIOTT SCALE</div></div>
+        <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">STRESS TEST · simulate failures, delays, and recovery</div></div>
         <div class="stats">
           <div class="stat"><span class="label-caps">Stress Level</span><span class="val e">CRITICAL</span></div>
           <div class="stat"><span class="label-caps">Harness</span><span class="val p" id="chaosState">IDLE</span></div>
@@ -1192,48 +1192,30 @@ function renderTier(m){
     lead.innerHTML=parts.slice(0,8).map(([k,p],i)=>{
       const res=Math.min(98,Math.round(p.avg_coverage*100));
       const cls=i===2?"style=\"border-left:4px solid var(--tertiary)\"":"";
-      return `<div class="rule" ${cls}><div class="top"><span class="nm" style="font-size:11px">RANK_${String(i+1).padStart(2,"0")}: ${k}_OPS</span><span class="data-sm" style="color:var(--secondary)">RES ${res}%</span></div>
+      return `<div class="rule" ${cls}><div class="top"><span class="nm" style="font-size:11px">Rank ${i+1}: ${k} Operations</span><span class="data-sm" style="color:var(--secondary)">Coverage ${res}%</span></div>
         <div class="bar" style="margin:4px 0"><span style="width:${(p.solves/max*100)}%;background:var(--secondary)"></span></div>
-        <div class="meta"><span>CREW_VELOCITY: ${(8+Math.random()*6).toFixed(1)} ops/s</span><span>${(10+Math.random()*40|0)}ms</span></div></div>`;
+        <div class="meta"><span>Throughput: ${(8+Math.random()*6).toFixed(1)} ops/s</span><span>solve time ${(10+Math.random()*40|0)}ms</span></div></div>`;
     }).join("");
   }
-  // resolution grid (live delta heatmap)
-  if(!window._gridBuilt){buildGrid();window._gridBuilt=true;}
-  updateResGrid(m);
-}
-
-function buildGrid(){
-  const g=document.getElementById("resGrid"); g.innerHTML="";
-  for(let i=0;i<100;i++){const d=document.createElement("div");d.dataset.i=i;g.appendChild(d);}
-  const vc=document.getElementById("vChart"); vc.innerHTML="";
-  for(let i=0;i<40;i++){const d=document.createElement("div");d.style.height=(10+Math.random()*80)+"%";vc.appendChild(d);}
-}
-
-/* Live resolution-grid delta: tint a swath of cells each poll to show where
-   coverage is changing — green = resolved, cyan = active, red = stress. */
-let _gridPhase=0;
-function updateResGrid(m){
-  const g=document.getElementById("resGrid"); if(!g||!g.children.length)return;
-  _gridPhase++;
-  const parts=m.partitions||{};
-  let cov=0,n=0; for(const k in parts){cov+=parts[k].avg_coverage;n++;}
-  const covPct=n?cov/n:0;                 // 0..1, closer to 1 = healthier
-  const breach=(m.sla_breaches||0)>0;
-  // choose a contiguous band to "light up" this tick (scrolls each poll)
-  const band=12, start=(_gridPhase*7)%100;
-  for(let i=0;i<100;i++){
-    const cell=g.children[i]; if(!cell)continue;
-    if(i>=start&&i<start+band){
-      const t=(i-start)/band;            // 0..1 across the lit band
-      if(breach&&t>0.62){cell.style.background="rgba(255,82,82,0.55)";}
-      else if(t<0.45){cell.style.background="rgba(74,225,118,0.42)";}   // resolved
-      else{cell.style.background="rgba(172,237,255,0.30)";}            // active
-    } else if(covPct>0.97){
-      // faint ambient green where the network is healthy
-      cell.style.background="rgba(74,225,118,0.06)";
-    } else {
-      cell.style.background="rgba(255,180,174,0.05)";
-    }
+  const guide=document.getElementById("tierGuide");
+  if(guide){
+    const top=parts[0]?.[0]||"—";
+    const topCoverage=parts[0]?Math.round(parts[0][1].avg_coverage*100):0;
+    guide.innerHTML=`
+      <div class="alert-box ok">
+        <div class="h"><span class="material-symbols-outlined" style="color:var(--secondary);font-size:14px">info</span><span style="color:var(--secondary)">How this page works</span></div>
+        <div class="t">Tier 1 is fast first-pass work, Tier 2 is deeper optimization, and Tier 3 is human review. The leaderboard shows which region is handling the most work cleanly.</div>
+      </div>
+      <div class="rule ok"><div class="top"><span class="nm">Current leader</span><span class="data-sm" style="color:var(--primary)">${top}</span></div><div class="d">This is the strongest region right now.</div><div class="meta"><span>Coverage ${topCoverage}%</span><span>Highest volume</span></div></div>
+      <div class="rule"><div class="top"><span class="nm">What the numbers mean</span><span class="data-sm" style="color:var(--primary)">simple</span></div><div class="d">More solves means more work handled. Higher coverage means fewer unresolved items. Lower time means the region is moving faster.</div><div class="meta"><span>Fast = good</span><span>Low delay = good</span></div></div>`;
+  }
+  const vc=document.getElementById("vChart");
+  if(vc){
+    const max=parts[0]?.[1].solves||1;
+    vc.innerHTML=parts.slice(0,8).map(([k,p])=>{
+      const height=Math.max(18, Math.round((p.solves/max)*100));
+      return `<div title="${k}: ${p.solves} solves, ${(p.avg_coverage*100).toFixed(0)}% coverage" style="height:${height}%;background:linear-gradient(180deg, rgba(172,237,255,.9), rgba(74,225,118,.7));border-top:2px solid var(--primary);border-radius:2px 2px 0 0"></div>`;
+    }).join("") || '<div class="empty">No throughput data yet.</div>';
   }
 }
 
@@ -1247,17 +1229,17 @@ function renderRules(m){
   // constraints list (status driven by violations)
   const list=document.getElementById("rulesList");
   const R=[
-    {nm:"MAX_DUTY_HOURS",val:"14.0 HRS",d:"Caps individual crew duty period within 24h cycle.",st:viol>0?"warn":"ok"},
-    {nm:"MAX_FLIGHT_HOURS",val:"9.0 HRS",d:"Hard limit on block flight time per assignment.",st:"ok"},
-    {nm:"MIN_REST_HOURS",val:"10.0 HRS",d:"Mandatory recovery period between duties.",st:viol>1?"bad":"ok"},
-    {nm:"MAX_DEADHEAD_HOURS",val:"8.0 HRS",d:"Cap on deadheading time (no loops — v1 failure mode).",st:"ok"},
-    {nm:"NO_DEADHEAD_LOOP",val:"HARD",d:"Prevents crews deadheading in circles.",st:"ok"},
-    {nm:"QUALIFICATION_MATCH",val:"B737/B777/A320/A321/B787",d:"Aircraft type must be in crew qualifications.",st:viol>0?"warn":"ok"},
-    {nm:"MAX_CONSECUTIVE_DAYS",val:"6 DAYS",d:"Limit on consecutive duty days.",st:"ok"},
+    {nm:"Maximum duty time",val:"14.0 hours",d:"How long a crew can work before they must stop.",st:viol>0?"warn":"ok"},
+    {nm:"Maximum flight time",val:"9.0 hours",d:"Longest single block of flying allowed for one assignment.",st:"ok"},
+    {nm:"Minimum rest time",val:"10.0 hours",d:"Required break before a crew can work again.",st:viol>1?"bad":"ok"},
+    {nm:"Deadhead limit",val:"8.0 hours",d:"How long repositioning travel can take before it becomes a problem.",st:"ok"},
+    {nm:"No deadhead loops",val:"Enabled",d:"Stops crews from getting moved around in circles.",st:"ok"},
+    {nm:"Qualification match",val:"B737 / B777 / A320 / A321 / B787",d:"Only trained crews can be assigned to the aircraft type.",st:viol>0?"warn":"ok"},
+    {nm:"Maximum consecutive days",val:"6 days",d:"How many days in a row a crew can be on duty.",st:"ok"},
   ];
   list.innerHTML=R.map(r=>`<div class="rule ${r.st}"><div class="top"><span class="nm">${r.nm}</span>
     <span class="dotmini" style="background:${r.st==='bad'?'var(--error)':r.st==='warn'?'var(--tertiary)':'var(--primary)'};box-shadow:0 0 6px currentColor"></span></div>
-    <div class="d">${r.d}</div><div class="meta"><span>VAL: ${r.val}</span><span class="state">${r.st==='bad'?'Violation':r.st==='warn'?'Review':'Active'}</span></div></div>`).join("");
+    <div class="d">${r.d}</div><div class="meta"><span>Limit: ${r.val}</span><span class="state">${r.st==='bad'?'Violation':r.st==='warn'?'Review':'Active'}</span></div></div>`).join("");
   // projection bars (decorative, biased by efficiency)
   const proj=document.getElementById("rulesProj");
   if(proj&&!proj.children.length){for(let i=0;i<8;i++){const d=document.createElement("div");d.style.height=(50+Math.random()*40)+"%";proj.appendChild(d);}}
@@ -1408,7 +1390,10 @@ function renderReview(m,events){
     <button class="act-btn escalate" data-act="escalate"><span>Escalate To Chief</span><span class="material-symbols-outlined">priority_high</span></button>
     <button class="act-btn reject" data-act="reject"><span>Override &amp; Reject</span><span class="material-symbols-outlined">block</span></button>`;
   act.querySelectorAll(".act-btn").forEach(b=>b.addEventListener("click",()=>{
-    resolvedCount++; selectedCase=null; renderReview(m,events);
+    const action=b.dataset.act||"review";
+    postAction("/api/review/action",`REVIEW_${action.toUpperCase()}`,{action,case_id:selectedCase||"current"}).finally(()=>{
+      resolvedCount++; selectedCase=null; renderReview(m,events);
+    });
   }));
 }
 
@@ -1431,6 +1416,37 @@ function renderChaos(m,events){
     if(buf)buf.textContent="100%"; if(buf)buf.style.color="var(--secondary)";
     if(bufBar){bufBar.style.width="100%";bufBar.style.background="var(--secondary)";}
   }
+}
+
+function postAction(path, detail, payload){
+  const btnMap = {
+    "/api/rules/validate": document.getElementById("rulesValidate"),
+    "/api/rules/deploy": document.getElementById("rulesDeploy"),
+    "/api/rules/execute": document.getElementById("rulesExec"),
+    "/api/chaos": document.getElementById("chaosRun"),
+    "/api/review/action": null
+  };
+  const button = btnMap[path];
+  if(button) button.disabled = true;
+  return fetch(path, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: payload ? JSON.stringify(payload) : "{}"
+  })
+    .then(r=>r.json())
+    .then(data=>{
+      if(detail){
+        const feed = document.getElementById(currentView()==="rules" ? "rulesTerm" : "opsTerm");
+        if(feed){
+          const note = document.createElement("div");
+          note.className = "ln chaos_done";
+          note.innerHTML = `<span class="ts">${tickMs()}</span><span class="tg">[${detail}]</span><span class="ms">${data.status||"ok"}</span>`;
+          feed.prepend(note);
+        }
+      }
+      return data;
+    })
+    .finally(()=>{ if(button) button.disabled = false; });
 }
 
 /* ---------- polling ---------- */
@@ -1478,6 +1494,12 @@ zoomIn.addEventListener("click",()=>{zoom=Math.min(3,zoom*1.25);});
 zoomOut.addEventListener("click",()=>{zoom=Math.max(0.5,zoom/1.25);});
 btn3d.addEventListener("click",()=>{iso3d=!iso3d;btn3d.classList.toggle("on",iso3d);airportCanvas.classList.toggle("iso",iso3d);});
 btnLayers.addEventListener("click",()=>{layersOn=!layersOn;btnLayers.classList.toggle("on",layersOn);});
+const rulesValidate=document.getElementById("rulesValidate");
+const rulesDeploy=document.getElementById("rulesDeploy");
+const rulesExec=document.getElementById("rulesExec");
+if(rulesValidate) rulesValidate.addEventListener("click",()=>postAction("/api/rules/validate","RULES_VALIDATE"));
+if(rulesDeploy) rulesDeploy.addEventListener("click",()=>postAction("/api/rules/deploy","RULES_DEPLOY"));
+if(rulesExec) rulesExec.addEventListener("click",()=>postAction("/api/rules/execute","RULES_EXECUTE"));
 document.querySelectorAll(".toggle").forEach(t=>t.addEventListener("click",()=>{
   const on=t.classList.toggle("on"); if(on&&!t.classList.contains("err")&&t.dataset.t==="cascade"){}
 }));
@@ -1485,7 +1507,7 @@ const chaosRun=document.getElementById("chaosRun");
 chaosRun.addEventListener("click",()=>{
   if(chaosRunning)return;
   chaosRun.disabled=true; chaosRunning=true;
-  fetch("/api/chaos",{method:"POST"}).then(r=>r.json()).catch(()=>{}).finally(()=>{
+  postAction("/api/chaos","CHAOS_START").catch(()=>{}).finally(()=>{
     // keep "running" until a chaos_done event arrives
   });
 });
