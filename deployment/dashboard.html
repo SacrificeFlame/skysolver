@@ -494,15 +494,15 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
       <div class="strip glass">
         <div class="obj"><div class="label-caps">Mission Objective</div><div class="val">PASSENGER RECOVERY · who is disrupted and how they get rebooked</div></div>
         <div class="stats">
-          <div class="stat"><span class="label-caps">Disrupted Pax</span><span class="val e" id="paxDisrupted">0</span></div>
-          <div class="stat"><span class="label-caps">Reaccommodated</span><span class="val s" id="paxRecovered">0</span></div>
-          <div class="stat"><span class="label-caps">Comp. Est.</span><span class="val t" id="paxComp">$0</span></div>
+          <div class="stat"><span class="label-caps">Disrupted Travelers</span><span class="val e" id="paxDisrupted">0</span></div>
+          <div class="stat"><span class="label-caps">Rebooked</span><span class="val s" id="paxRecovered">0</span></div>
+          <div class="stat"><span class="label-caps">Estimated Cost</span><span class="val t" id="paxComp">$0</span></div>
         </div>
       </div>
       <div class="grid3">
         <div class="col">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Passenger Backlog</span></h3>
+            <h3><span class="label-caps">Travelers Needing Rebooking</span></h3>
             <div class="body" id="paxBacklog">
                 <div class="empty">No disrupted passengers currently in the network.</div>
             </div>
@@ -510,11 +510,11 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
         </div>
         <div class="col mid">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Seat Inventory &amp; Capacity</span></h3>
+            <h3><span class="label-caps">Open Seats and Capacity</span></h3>
             <div class="res-grid" id="paxGrid"></div>
           </div>
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Hotel &amp; Meal Vouchers (Synthetic)</span></h3>
+            <h3><span class="label-caps">Hotel and Meal Support</span></h3>
             <div class="body" id="paxHotels">
                 <div class="empty">No synthetic compensation generated yet.</div>
             </div>
@@ -522,7 +522,7 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
         </div>
         <div class="col">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">AI Explanation Panel</span></h3>
+            <h3><span class="label-caps">Why This Plan</span></h3>
             <div class="body" id="paxExplain">
                 <div class="empty">Select a reaccommodation to view reasoning.</div>
             </div>
@@ -643,6 +643,7 @@ let lastEvents = [];
 let selectedCase = null;
 let resolvedCount = 0;
 let chaosRunning = false;
+let reviewedCases = new Set();
 
 /* ---------- view switching ---------- */
 function setView(v){
@@ -1180,6 +1181,22 @@ function renderTerm(el,events,cap){
   }).join("");
 }
 
+function renderEventStreams(events){
+  renderTerm(document.getElementById("opsTerm"),events,40);
+  renderTerm(document.getElementById("tierTerm"),events,30);
+  renderTerm(document.getElementById("rulesTerm"),events,30);
+  renderTerm(document.getElementById("chaosTerm"),events,40);
+}
+
+function pushLocalEvent(kind, detail, partition){
+  const entry={ts:new Date().toISOString(),kind,partition:partition||"GLOBAL",detail};
+  lastEvents=[entry,...lastEvents].slice(0,200);
+  renderEventStreams(lastEvents);
+  if(document.getElementById("view-review").classList.contains("active")){
+    renderReview(getLastMetrics(),lastEvents);
+  }
+}
+
 function renderTier(m){
   setText("tierT1",m.tier_usage?.tier1||0);
   setText("tierT2",m.tier_usage?.tier2||0);
@@ -1266,53 +1283,53 @@ function renderPax(m){
 
   const backlogEl = document.getElementById("paxBacklog");
   if (!pax.backlog?.length) {
-    backlogEl.innerHTML = '<div class="empty">No disrupted passengers currently in the network.</div>';
+    backlogEl.innerHTML = '<div class="empty">No travelers need rebooking right now.</div>';
   } else {
     backlogEl.innerHTML = pax.backlog.map(item => `
       <div class="rule ok" style="margin-bottom:8px">
         <div class="top"><span class="nm">${item.id}</span><span class="data-sm" style="color:var(--secondary)">${item.priority}</span></div>
         <div class="d">${item.route}</div>
-        <div class="meta"><span>STATUS: ${item.status}</span><span>RECOVERY READY</span></div>
+        <div class="meta"><span>Status: ${item.status}</span><span>Ready for rebooking</span></div>
       </div>`).join("");
   }
 
   const gridEl = document.getElementById("paxGrid");
   if (!pax.inventory?.length) {
-    gridEl.innerHTML = '<div class="empty">No seat inventory available.</div>';
+    gridEl.innerHTML = '<div class="empty">No seat availability data yet.</div>';
   } else {
     gridEl.innerHTML = pax.inventory.map(item => `
       <div class="rule" style="margin-bottom:8px">
         <div class="top"><span class="nm">${item.flight}</span><span class="data-sm" style="color:var(--primary)">${item.status}</span></div>
-        <div class="meta"><span>ECONOMY: ${item.economy}</span><span>BUSINESS: ${item.business}</span></div>
+        <div class="meta"><span>Economy seats: ${item.economy}</span><span>Business seats: ${item.business}</span></div>
       </div>`).join("");
   }
 
   const hotelEl = document.getElementById("paxHotels");
   if (!pax.hotel_actions?.length) {
-    hotelEl.innerHTML = '<div class="empty">No synthetic compensation generated yet.</div>';
+    hotelEl.innerHTML = '<div class="empty">No hotel or meal support is needed yet.</div>';
   } else {
     hotelEl.innerHTML = pax.hotel_actions.map(item => `
       <div class="rule warn" style="margin-bottom:8px">
         <div class="top"><span class="nm">${item.city}</span><span class="data-sm" style="color:var(--tertiary)">${item.rooms} rooms</span></div>
         <div class="d">${item.hotel}</div>
-        <div class="meta"><span>${item.status}</span><span>VOUCHER READY</span></div>
+        <div class="meta"><span>${item.status}</span><span>Support ready</span></div>
       </div>`).join("");
   }
 
   const explainEl = document.getElementById("paxExplain");
   const primary = pax.backlog?.[0];
   if (!primary) {
-    explainEl.innerHTML = '<div class="empty">Select a reaccommodation to view reasoning.</div>';
+    explainEl.innerHTML = '<div class="empty">Select a traveler to see why this plan was chosen.</div>';
   } else {
     explainEl.innerHTML = `
       <div class="alert-box ok">
-        <div class="h"><span class="material-symbols-outlined" style="color:var(--secondary);font-size:14px">check_circle</span><span style="color:var(--secondary)">Recommended Option</span></div>
-        <div class="t">${primary.id} should be rebooked onto the next open leg with a hotel voucher because the original itinerary has a high likelihood of a missed connection.</div>
+        <div class="h"><span class="material-symbols-outlined" style="color:var(--secondary);font-size:14px">check_circle</span><span style="color:var(--secondary)">Recommended plan</span></div>
+        <div class="t">${primary.id} should be rebooked onto the next open leg with hotel support because the original itinerary is likely to miss a connection.</div>
       </div>
       <div class="rule">
-        <div class="top"><span class="nm">Why this candidate wins</span><span class="data-sm" style="color:var(--primary)">score 0.94</span></div>
-        <div class="d">It preserves cabin preference, minimizes total travel time, and keeps the itinerary within legal duty constraints.</div>
-        <div class="meta"><span>ROUTE: ${primary.route}</span><span>HUMAN REVIEW: LOW</span></div>
+        <div class="top"><span class="nm">Why this plan works</span><span class="data-sm" style="color:var(--primary)">score 0.94</span></div>
+        <div class="d">It keeps the preferred cabin, cuts travel time, and stays within crew and passenger rules.</div>
+        <div class="meta"><span>Route: ${primary.route}</span><span>Human review needed: low</span></div>
       </div>`;
   }
 }
@@ -1345,6 +1362,11 @@ function renderReview(m,events){
     cases.push({id:"syn"+worst,type:(p.avg_coverage<0.95||(p.avg_time_s*1000)>90)?"crit":"rec",ts:new Date().toISOString(),tag:p.avg_coverage<0.95?"Coverage below target":"Throughput under watch",
       desc:`${worst} is at ${(p.avg_coverage*100).toFixed(0)}% coverage with ${(p.avg_time_s*1000).toFixed(0)}ms average solve time. Network rate is ${perSecond.toFixed(2)} solves/s.`,flight:flights[hash(worst)%flights.length],sec:worst+"-OPS",action:"Confirm recovery plan"});
   }
+  const reviewedFromFeed=new Set((events||[]).filter(e=>String(e.kind||"").startsWith("review_")).map(e=>{
+    const match=String(e.detail||"").match(/for\s+(.+)$/i);
+    return match?match[1]:null;
+  }).filter(Boolean));
+  cases.splice(0,cases.length,...cases.filter(c=>!reviewedCases.has(c.id)&&!reviewedFromFeed.has(c.id)));
   const open=cases.length;
   setText("revOpen",open);
   setText("revResolved",resolvedCount);
@@ -1391,8 +1413,14 @@ function renderReview(m,events){
     <button class="act-btn reject" data-act="reject"><span>Reject case</span><span class="material-symbols-outlined">block</span></button>`;
   act.querySelectorAll(".act-btn").forEach(b=>b.addEventListener("click",()=>{
     const action=b.dataset.act||"review";
-    postAction("/api/review/action",`REVIEW_${action.toUpperCase()}`,{action,case_id:selectedCase||"current"}).finally(()=>{
-      resolvedCount++; selectedCase=null; renderReview(m,events);
+    const caseId=selectedCase||c.id||"current";
+    postAction("/api/review/action",`REVIEW_${action.toUpperCase()}`,{action,case_id:caseId}).then(data=>{
+      reviewedCases.add(caseId);
+      resolvedCount++;
+      selectedCase=null;
+      pushLocalEvent(`review_${action}`,`Review action ${data.action||action} for ${data.case_id||caseId}`);
+      poll();
+      renderReview(getLastMetrics(),lastEvents);
     });
   }));
 }
@@ -1436,13 +1464,7 @@ function postAction(path, detail, payload){
     .then(r=>r.json())
     .then(data=>{
       if(detail){
-        const feed = document.getElementById(currentView()==="rules" ? "rulesTerm" : "opsTerm");
-        if(feed){
-          const note = document.createElement("div");
-          note.className = "ln chaos_done";
-          note.innerHTML = `<span class="ts">${tickMs()}</span><span class="tg">[${detail}]</span><span class="ms">${data.status||"ok"}</span>`;
-          feed.prepend(note);
-        }
+        pushLocalEvent("ui_action", detail, payload?.partition||"GLOBAL");
       }
       return data;
     })
@@ -1471,10 +1493,7 @@ function poll(){
     const sig=JSON.stringify(events);
     if(sig!==JSON.stringify(lastEvents)){
       lastEvents=events;
-      renderTerm(document.getElementById("opsTerm"),events,40);
-      renderTerm(document.getElementById("tierTerm"),events,30);
-      renderTerm(document.getElementById("rulesTerm"),events,30);
-      renderTerm(document.getElementById("chaosTerm"),events,40);
+      renderEventStreams(events);
       if(document.getElementById("view-review").classList.contains("active"))renderReview(getLastMetrics(),events);
     }
   }).catch(()=>{});
