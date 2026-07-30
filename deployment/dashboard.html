@@ -543,19 +543,19 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
       <div class="grid3">
         <div class="col">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Critical Alerts</span><span class="dot e glow" style="width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 8px var(--error)"></span></h3>
+            <h3><span class="label-caps">Open Cases</span><span class="dot e glow" style="width:8px;height:8px;border-radius:50%;background:var(--error);box-shadow:0 0 8px var(--error)"></span></h3>
             <div class="body" id="revAlerts"></div>
           </div>
         </div>
         <div class="col mid">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Case Detail</span></h3>
+            <h3><span class="label-caps">Case Summary</span></h3>
             <div class="body" id="revCase"></div>
           </div>
         </div>
         <div class="col">
           <div class="panel glass" style="flex:1">
-            <h3><span class="label-caps">Action Interface</span></h3>
+            <h3><span class="label-caps">Decision Panel</span></h3>
             <div class="body" id="revActions" style="justify-content:flex-start"></div>
           </div>
         </div>
@@ -1327,9 +1327,9 @@ function renderReview(m,events){
   (events||[]).filter(e=>e.kind==="sla_breach"||e.kind==="xpartition"||e.kind==="solve")
     .forEach((e,i)=>{
       const fl=flights[i%flights.length]; const ts=e.ts||new Date().toISOString();
-      if(e.kind==="sla_breach")cases.push({id:"br"+i,type:"crit",ts,tag:"[!] CREW_FATIGUE_OVERRIDE",desc:`Flight ${fl}: duty-time limit exceeded in partition ${e.partition||"ATL"}.`,flight:fl,sec:e.partition||"ATL-7"});
-      else if(e.kind==="xpartition")cases.push({id:"xp"+i,type:"drift",ts,tag:"[*] LOGISTICS_DRIFT",desc:`Cross-partition move storm at ${e.partition||"NODE-09"} causing cascade.`,flight:fl,sec:e.partition||"NODE-09"});
-      else cases.push({id:"rc"+i,type:"rec",ts,tag:"[?] RESCHEDULE_RECOMMENDED",desc:`Sector storm: divert ${fl}. New crew required (${e.partition||"SEC-4"}).`,flight:fl,sec:e.partition||"SEC-4"});
+      if(e.kind==="sla_breach")cases.push({id:"br"+i,type:"crit",ts,tag:"Crew limit reached",desc:`Flight ${fl} went over a duty-time limit in ${e.partition||"ATL"}.`,flight:fl,sec:e.partition||"ATL-7",action:"Review crew assignment"});
+      else if(e.kind==="xpartition")cases.push({id:"xp"+i,type:"drift",ts,tag:"Network imbalance",desc:`Work shifted too heavily into ${e.partition||"NODE-09"}.`,flight:fl,sec:e.partition||"NODE-09",action:"Rebalance workload"});
+      else cases.push({id:"rc"+i,type:"rec",ts,tag:"Rebook recommended",desc:`Flight ${fl} needs a fresh crew and timing check.`,flight:fl,sec:e.partition||"SEC-4",action:"Confirm recovery plan"});
     });
   // 2) synthesize triage candidates from real partition metrics so the queue
   //    always reflects the live network (low coverage / slow partitions flag)
@@ -1339,11 +1339,11 @@ function renderReview(m,events){
     const perSecond=metrics.uptime_s?(metrics.total_solves||0)/metrics.uptime_s:0;
     if(sorted.length>=2){
       const b=sorted[1]; const bp=parts[b];
-      cases.push({id:"syn"+b,type:"drift",ts:new Date().toISOString(),tag:"[*] COVERAGE_DRIFT",
-        desc:`Partition ${b} at ${(bp.avg_coverage*100).toFixed(0)}% coverage, ${(bp.avg_time_s*1000).toFixed(0)}ms avg — recommend rebalancing to ${worst}.`,flight:flights[hash(b)%flights.length],sec:b+"-OPS"});
+      cases.push({id:"syn"+b,type:"drift",ts:new Date().toISOString(),tag:"Coverage is slipping",
+        desc:`${b} is at ${(bp.avg_coverage*100).toFixed(0)}% coverage and should shift work toward ${worst}.`,flight:flights[hash(b)%flights.length],sec:b+"-OPS",action:"Move work to stronger region"});
     }
-    cases.push({id:"syn"+worst,type:(p.avg_coverage<0.95||(p.avg_time_s*1000)>90)?"crit":"rec",ts:new Date().toISOString(),tag:(p.avg_coverage<0.95?"[!] COVERAGE_DEGRADED":"[?] THROUGHPUT_WATCH"),
-      desc:`Partition ${worst}: ${(p.avg_coverage*100).toFixed(0)}% coverage, ${(p.avg_time_s*1000).toFixed(0)}ms avg solve, ${p.solves} solves. Network rate ${perSecond.toFixed(2)} solves/s.`,flight:flights[hash(worst)%flights.length],sec:worst+"-OPS"});
+    cases.push({id:"syn"+worst,type:(p.avg_coverage<0.95||(p.avg_time_s*1000)>90)?"crit":"rec",ts:new Date().toISOString(),tag:p.avg_coverage<0.95?"Coverage below target":"Throughput under watch",
+      desc:`${worst} is at ${(p.avg_coverage*100).toFixed(0)}% coverage with ${(p.avg_time_s*1000).toFixed(0)}ms average solve time. Network rate is ${perSecond.toFixed(2)} solves/s.`,flight:flights[hash(worst)%flights.length],sec:worst+"-OPS",action:"Confirm recovery plan"});
   }
   const open=cases.length;
   setText("revOpen",open);
@@ -1354,7 +1354,7 @@ function renderReview(m,events){
     if(!selectedCase||!cases.find(c=>c.id===selectedCase))selectedCase=cases[0].id;
     box.innerHTML=cases.slice(0,10).map(c=>`<div class="alert-card ${c.type} ${c.id===selectedCase?'sel':''}" data-id="${c.id}">
       <div class="t"><span>${c.tag}</span><span style="color:var(--outline)">${timeStr(c.ts)}</span></div>
-      <div class="d">${c.desc}</div><div class="tags"><span class="tagpill">FLIGHT: ${c.flight}</span><span class="tagpill">${c.sec}</span></div></div>`).join("");
+      <div class="d">${c.desc}</div><div class="tags"><span class="tagpill">Flight ${c.flight}</span><span class="tagpill">${c.sec}</span></div></div>`).join("");
     box.querySelectorAll(".alert-card").forEach(c=>c.addEventListener("click",()=>{selectedCase=c.dataset.id;renderReview(m,events);}));
   }
   // case detail
@@ -1363,32 +1363,32 @@ function renderReview(m,events){
   if(!c){detail.innerHTML='<div class="empty">Select a case.</div>';}
   else{
     detail.innerHTML=`
-      <div class="case-head"><div><div class="ref">CASE_REF: ${c.flight}-TRIAGE</div><div class="sub">HUMAN_TRIAGE_PENDING // ELAPSED 00:0${(1+Math.random()*8|0)}:12</div></div>
-        <div style="text-align:right"><div class="label-caps">Probability</div><div class="data-lg" style="color:var(--secondary)">${(90+Math.random()*9).toFixed(1)}%</div>
-        <div class="label-caps" style="margin-top:6px">Impact</div><div class="data-lg" style="color:var(--error)">CRIT-3</div></div></div>
+      <div class="case-head"><div><div class="ref">CASE REF: ${c.flight}</div><div class="sub">This case needs a human decision before the network moves on.</div></div>
+        <div style="text-align:right"><div class="label-caps">Confidence</div><div class="data-lg" style="color:var(--secondary)">${(90+Math.random()*9).toFixed(1)}%</div>
+        <div class="label-caps" style="margin-top:6px">Priority</div><div class="data-lg" style="color:var(--error)">High</div></div></div>
       <div class="case-grid">
-        <div class="schematic"><span class="l label-caps" style="color:var(--primary)">Aircraft Dynamics: Kinetic-V4</span>
-          <svg viewBox="0 0 400 200" style="width:80%;opacity:.7"><path d="M40,100 L360,100 M200,40 L200,160 M120,70 L280,130 M280,70 L120,130" stroke="#acedff" stroke-width="1" fill="none" opacity=".6"/><circle cx="200" cy="100" r="4" fill="#acedff"/></svg></div>
-        <div class="traj"><div class="label-caps" style="color:var(--primary);margin-bottom:8px">Trajectory Variance</div>
+        <div class="schematic"><span class="l label-caps" style="color:var(--primary)">Case reason</span>
+          <div style="font-family:'Inter';font-size:13px;line-height:1.5;color:var(--on-surface)">${c.desc}</div></div>
+        <div class="traj"><div class="label-caps" style="color:var(--primary);margin-bottom:8px">What happened</div>
           <svg viewBox="0 0 400 200" style="width:100%;height:120px"><path d="M0,150 Q50,150 100,100 T200,50 T300,120 T400,20" fill="none" stroke="#acedff" stroke-width="1.5" opacity=".6"/><circle cx="100" cy="100" r="3" fill="#acedff"/></svg>
-          <div class="label-caps" style="color:var(--tertiary)">POS_DRIFT: +${(10+Math.random()*10).toFixed(1)}%</div></div>
+          <div class="label-caps" style="color:var(--tertiary)">Route change needed</div></div>
         <div class="crew-cmp" style="grid-column:1/-1">
           <div class="col"><h4>Current Assignment</h4>
             <div class="crew-row"><div class="av">JM</div><div><div class="nm">CAPT J. MILLER</div><div class="dt" style="color:var(--error)">DUTY: 11:54 / 12:00 [CRITICAL]</div></div></div>
-            <div class="crew-log err"><div>[ERR] REST_CYCLE_VIOLATION_IMMINENT</div><div>[LOG] PREV: ${c.flight} (LHR-JFK)</div><div>[LOG] NEXT: ${c.flight} (JFK-ORD)</div></div></div>
-          <div class="col"><h4>Recommended (AI)</h4>
+            <div class="crew-log err"><div>Rest window is nearly exhausted.</div><div>Previous leg: ${c.flight} (LHR-JFK)</div><div>Next leg: ${c.flight} (JFK-ORD)</div></div></div>
+          <div class="col"><h4>Recommended Assignment</h4>
             <div class="crew-row"><div class="av" style="color:var(--secondary)">SC</div><div><div class="nm">CAPT S. CHEN</div><div class="dt" style="color:var(--secondary)">DUTY: 00:00 / 12:00 [READY]</div></div></div>
-            <div class="crew-log ok"><div>[ACK] OPTIMAL_REST_STATE_VERIFIED</div><div>[LOG] RELOCATION: NODE-04</div><div>[LOG] COMPAT_SCORE: 0.98</div></div></div>
+            <div class="crew-log ok"><div>Fresh rest cycle available.</div><div>Reposition from NODE-04.</div><div>Match score: 0.98</div></div></div>
         </div>
       </div>`;
   }
   // actions
   const act=document.getElementById("revActions");
-  act.innerHTML=`<div class="slider" style="margin-bottom:14px"><span class="label-caps">Triage Notes</span>
-    <textarea style="width:100%;background:rgba(0,0,0,.3);border:1px solid var(--outline-muted);color:var(--on-surface);font-family:'JetBrains Mono';font-size:11px;padding:8px;height:70px;resize:none;margin-top:6px" placeholder="Enter manual justification..."></textarea></div>
-    <button class="act-btn approve" data-act="approve"><span>Approve &amp; Resolve</span><span class="material-symbols-outlined">check_circle</span></button>
-    <button class="act-btn escalate" data-act="escalate"><span>Escalate To Chief</span><span class="material-symbols-outlined">priority_high</span></button>
-    <button class="act-btn reject" data-act="reject"><span>Override &amp; Reject</span><span class="material-symbols-outlined">block</span></button>`;
+  act.innerHTML=`<div class="slider" style="margin-bottom:14px"><span class="label-caps">Notes</span>
+    <textarea style="width:100%;background:rgba(0,0,0,.3);border:1px solid var(--outline-muted);color:var(--on-surface);font-family:'JetBrains Mono';font-size:11px;padding:8px;height:70px;resize:none;margin-top:6px" placeholder="Add a short reason for the decision..."></textarea></div>
+    <button class="act-btn approve" data-act="approve"><span>Approve case</span><span class="material-symbols-outlined">check_circle</span></button>
+    <button class="act-btn escalate" data-act="escalate"><span>Escalate to lead</span><span class="material-symbols-outlined">priority_high</span></button>
+    <button class="act-btn reject" data-act="reject"><span>Reject case</span><span class="material-symbols-outlined">block</span></button>`;
   act.querySelectorAll(".act-btn").forEach(b=>b.addEventListener("click",()=>{
     const action=b.dataset.act||"review";
     postAction("/api/review/action",`REVIEW_${action.toUpperCase()}`,{action,case_id:selectedCase||"current"}).finally(()=>{
