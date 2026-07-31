@@ -13,14 +13,17 @@ import json
 import math
 import threading
 import hmac
+import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import urlparse
 
 from passengers.engine import PassengerRecoveryEngine
 from passengers.event_store import PassengerEventStore
 from passengers.models import Passenger, PassengerStatus
 from passengers.routes.generator import FlightEdge, ItineraryGenerator
+from deployment.recovery_api import recovery_store, WorkflowError
 
 # Project root (parent of deployment/) — holds index.html + stitch/ assets.
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -29,6 +32,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # and solver/replay processes share one source of truth.
 _METRICS_FILE = ".sky_metrics.json"
 _TEMPLATE = os.path.join(os.path.dirname(__file__), "dashboard.html")
+_FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 # Static content types for the dashboard hub + Stitch screen assets.
 _CONTENT_TYPES = {
@@ -395,7 +399,7 @@ def trigger_chaos() -> str:
 
 class DashboardHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        path = self.path.split("?")[0]
+        path = urlparse(self.path).path
         if path in ("/", "/login", "/index.html"):
             self._serve_login()
         elif path in ("/dashboard", "/ops"):
@@ -412,6 +416,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_json({"status": "ready", "event_store": "file-demo", "ruleset": "synthetic-far117-v2"})
         elif path == "/api/v1/overview":
             self._serve_json(get_operational_overview())
+        elif path == "/api/v1/disruptions":
+            self._serve_json({"items": recovery_store.disruptions(), "data_mode": "synthetic-demo"})
+        elif path.startswith("/api/v1/disruptions/"):
+            self._api(lambda: recovery_store.disruption(path.rsplit("/", 1)[-1]))
+        elif path.startswith("/api/v1/flights/"):
+            self._api(lambda: recovery_store.flight(path.rsplit("/", 1)[-1]))
+        elif path == "/api/v1/audit":
+            self._serve_json({"items": recovery_store.audit()})
+        elif path == "/api/v1/events":
+            self._serve_event_stream(recovery_store.events())
+        elif path.startswith("/api/v1/recoveries/"):
+            parts = [p for p in path.split("/") if p]
+            recovery_id = parts[3] if len(parts) > 3 else ""
+            if len(parts) == 4:
+                self._api(lambda: recovery_store.get(recovery_id))
+            elif len(parts) == 5 and parts[4] == "candidates":
+                self._api(lambda: {"items": recovery_store.candidates(recovery_id)})
+            else:
+                self._serve_404()
         elif path == "/api/login":
             self._serve_json({"ok": True, "redirect": "/dashboard"})
         elif path.startswith("/stitch/"):
@@ -421,12 +444,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._serve_static(os.path.join(_ROOT, rel))
             else:
                 self._serve_404()
+        elif path.startswith("/assets/"):
+            rel = os.path.normpath(path.lstrip("/")).replace("\\", "/")
+            if rel.startswith("assets/"):
+                self._serve_static(os.path.join(_FRONTEND_DIST, rel))
+            else:
+                self._serve_404()
         else:
             self._serve_404()
 
     def _serve_dashboard(self):
+        built_index = os.path.join(_FRONTEND_DIST, "index.html")
         try:
-            with open(_TEMPLATE, "r", encoding="utf-8") as f:
+            with open(built_index if os.path.exists(built_index) else _TEMPLATE, "r", encoding="utf-8") as f:
                 html = f.read()
         except OSError:
             html = "<h1>Dashboard template missing: dashboard.html</h1>"
@@ -450,9 +480,30 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode("utf-8"))
 
     def do_POST(self):
-        path = self.path.split("?")[0]
+        path = urlparse(self.path).path
         if path == "/api/chaos":
             self._serve_json({"status": trigger_chaos()})
+        elif path == "/api/v1/recoveries":
+            payload = self._read_json()
+            if payload is not None:
+                self._api(lambda: recovery_store.create(payload), status=201)
+        elif path.startswith("/api/v1/recoveries/"):
+            parts = [p for p in path.split("/") if p]
+            recovery_id = parts[3] if len(parts) > 3 else ""
+            action = parts[4] if len(parts) > 4 else ""
+            payload = self._read_json()
+            if payload is None:
+                return
+            operations = {
+                "decisions": lambda: recovery_store.decide(recovery_id, payload),
+                "validate": lambda: recovery_store.validate(recovery_id, payload),
+                "deploy": lambda: recovery_store.deploy(recovery_id, payload, self.headers.get("Idempotency-Key", "")),
+                "rollback": lambda: recovery_store.rollback(recovery_id, payload),
+            }
+            if action in operations:
+                self._api(operations[action])
+            else:
+                self._serve_404()
         elif path == "/api/v1/recovery/run":
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length).decode("utf-8") if length else "{}"
@@ -511,6 +562,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8") if length else "{}")
+        except json.JSONDecodeError:
+            self._serve_json({"error": "invalid_json", "message": "Request body must be valid JSON"}, status=400)
+            return None
+
+    def _api(self, operation, status=200):
+        try:
+            self._serve_json(operation(), status=status)
+        except WorkflowError as exc:
+            self._serve_json({"error": exc.code, "message": exc.message, "correlation_id": str(uuid.uuid4()), "rule_violations": []}, status=exc.status)
+
+    def _serve_event_stream(self, events):
+        body = "".join(f"event: recovery\ndata: {json.dumps(event)}\n\n" for event in events).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _serve_static(self, fs_path: str):
         ext = os.path.splitext(fs_path)[1].lower()
         ctype = _CONTENT_TYPES.get(ext, "application/octet-stream")
@@ -538,7 +612,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 def run_dashboard(port: int = 8501):
     """Run the dashboard HTTP server."""
     _seed_demo_state()
-    server = HTTPServer(("0.0.0.0", port), DashboardHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), DashboardHandler)
     print(f"SkySolver v2 Dashboard (Live Airport Ops Center) -> http://localhost:{port}")
     server.serve_forever()
 

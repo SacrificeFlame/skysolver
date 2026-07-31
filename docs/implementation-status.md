@@ -20,8 +20,8 @@ SkySolver is now an integrated disruption-recovery reference implementation: leg
 | Event state | Append-only streams, deterministic replay, idempotency, sequence numbers, optimistic concurrency, correlation IDs | In-memory/JSON reference adapter; production needs a transactional durable broker/store |
 | Partitioning | Hub-local solving and cross-partition move reconciliation | Reconciliation validation remains simplified |
 | Passenger recovery | Synthetic routing, priorities, capacity and compensation examples | Duplicate legacy passenger modules remain; no atomic multi-resource commit |
-| Operations API | `/api/v1/overview`, recovery command, liveness/readiness and legacy compatibility routes | Custom HTTP reference server, not a hardened API gateway |
-| Dashboard | Disruption-first digital twin, timeline, graph and decision visibility backed by versioned overview API | Airport scenario and most metrics are explicitly synthetic demo data |
+| Operations API | Versioned disruptions, flights, recoveries, candidates, decisions, validation, deployment, rollback, audit and SSE contracts with optimistic versions | Custom HTTP reference server and process-local workflow store, not a hardened API gateway |
+| Dashboard | React/TypeScript viewport-height OCC with digital twin, dependency graph, plan comparison, network impact, solver timeline, audit and command palette | Airport scenario and metrics are explicitly synthetic demo data |
 | Elastic operations | Worker health server, Kubernetes resources/probes and KEDA example | Queue consumer remains an adapter seam; Pulsar is not active in this build |
 | Verification | Unit/integration suite, compilation, two worker smokes, orchestration/state CI gates | Elliott harness is synthetic single-process replay, not a distributed carrier-scale proof |
 
