@@ -643,7 +643,6 @@ let lastEvents = [];
 let selectedCase = null;
 let resolvedCount = 0;
 let chaosRunning = false;
-let reviewedCases = new Set();
 
 /* ---------- view switching ---------- */
 function setView(v){
@@ -681,9 +680,11 @@ function runwayB(){return {id:"B",s:[0.11,0.74],e:[0.91,0.28],labelStart:"33R",l
 const GATE_Y=0.88,GATE_TOP=0.76,TAXI_Y=0.72,GATE_X0=0.05,GATE_DX=0.026,N_GATES=11;
 function gateX(i){return GATE_X0+(i%N_GATES)*GATE_DX;}
 let planes=[]; let seq=0; const MAX_PLANES=70; let runwayLock=null;
-function rnd(a,b){return a+Math.random()*(b-a);}
-function pick(a){return a[(Math.random()*a.length)|0];}
-function makeFlightId(){const p=["SK","AA","UA","DL","WN"];return p[(Math.random()*5)|0]+(100+((Math.random()*899)|0));}
+// Deterministic helpers (avoid random UI noise; use seq-based hashing)
+function seededFloat(seed){return (hash(String(seed)) % 1000) / 1000;}
+function rnd(a,b,seed){seed = seed||seq; return a + seededFloat(seed) * (b - a);}
+function pick(a,seed){seed = seed||seq; return a[hash(String(seed)) % a.length];}
+function makeFlightId(seed){seed = seed||seq; const p=["SK","AA","UA","DL","WN"]; const code = p[hash(String(seed))%p.length]; return code + (100 + (hash(String(seed)+"id") % 900));}
 function runwayOccupied(){return runwayLock!==null;}
 function claimRunway(p){if(!runwayLock){runwayLock=p.runwayId; p.hold=false; return true;} return runwayLock===p.runwayId;}
 function releaseRunway(p){if(runwayLock===p.runwayId) runwayLock=null;}
@@ -692,15 +693,21 @@ function releaseRunway(p){if(runwayLock===p.runwayId) runwayLock=null;}
    taxi→takeoff→climb plays over ~25-40s and a landing rolls out gently. */
 function outboundPath(g,r){return {nodes:[[gateX(g),GATE_Y],[gateX(g),GATE_TOP],[gateX(g),TAXI_Y],[0.16,TAXI_Y],r.s,r.e,[r.e[0]+0.05,r.e[1]-0.12]],speeds:[0.018,0.026,0.032,0.032,0.07,0.11],kind:"out"};}
 function inboundPath(g,r){return {nodes:[[r.e[0]+0.05,r.e[1]-0.12],r.e,r.s,[0.16,TAXI_Y],[gateX(g),TAXI_Y],[gateX(g),GATE_TOP],[gateX(g),GATE_Y]],speeds:[0.09,0.07,0.04,0.032,0.026,0.018],kind:"in"};}
+let spawnSeq = 0;
 function spawnPlane(tier,opts){
-  if(planes.length>=MAX_PLANES)return; opts=opts||{};
-  const r=Math.random()<0.5?runwayA():runwayB(); const g=(seq)%N_GATES;
-  const isOut=opts.kind?opts.kind==="out":Math.random()<0.55;
-  const path=isOut?outboundPath(g,r):inboundPath(g,r); seq++;
-  const jx=(Math.random()-0.5)*0.012, jz=(Math.random()-0.5)*0.008;
-  planes.push({id:makeFlightId(tier),tier,partition:opts.partition||pick(HUBS),path,runwayId:r.id,seg:0,t:0,
-    x:path.nodes[0][0]+jx,y:path.nodes[0][1]+jz,angle:0,trail:[],done:false,phase:isOut?"TAXI OUT":"APPROACH",spawn:performance.now(),
-    alt:0,pitch:0,jx,jz,hold:false});
+  if(planes.length>=MAX_PLANES) return; opts = opts || {};
+  // deterministic runway choice to avoid UI randomness
+  const r = (spawnSeq % 2 === 0) ? runwayA() : runwayB();
+  const g = (seq) % N_GATES;
+  const isOut = opts.kind ? opts.kind === "out" : ((hash(String(seq)) % 100) < 55);
+  const path = isOut ? outboundPath(g, r) : inboundPath(g, r);
+  seq++; spawnSeq++;
+  const jx = (seededFloat(seq) - 0.5) * 0.012, jz = (seededFloat(seq + 1) - 0.5) * 0.008;
+  planes.push({
+    id: makeFlightId(seq), tier, partition: opts.partition || pick(HUBS, seq), path, runwayId: r.id, seg: 0, t: 0,
+    x: path.nodes[0][0] + jx, y: path.nodes[0][1] + jz, angle: 0, trail: [], done: false, phase: isOut ? "TAXI OUT" : "APPROACH", spawn: performance.now(),
+    alt: 0, pitch: 0, jx, jz, hold: false
+  });
 }
 function lerp(a,b,t){return a+(b-a)*t;}
 function hash(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}return Math.abs(h);}
@@ -1209,9 +1216,10 @@ function renderTier(m){
     lead.innerHTML=parts.slice(0,8).map(([k,p],i)=>{
       const res=Math.min(98,Math.round(p.avg_coverage*100));
       const cls=i===2?"style=\"border-left:4px solid var(--tertiary)\"":"";
-      return `<div class="rule" ${cls}><div class="top"><span class="nm" style="font-size:11px">Rank ${i+1}: ${k} Operations</span><span class="data-sm" style="color:var(--secondary)">Coverage ${res}%</span></div>
-        <div class="bar" style="margin:4px 0"><span style="width:${(p.solves/max*100)}%;background:var(--secondary)"></span></div>
-        <div class="meta"><span>Throughput: ${(8+Math.random()*6).toFixed(1)} ops/s</span><span>solve time ${(10+Math.random()*40|0)}ms</span></div></div>`;
+      const throughput = ((p.solves||0) / Math.max(1, (m.uptime_s||1))).toFixed(2);
+              return `<div class="rule" ${cls}><div class="top"><span class="nm" style="font-size:11px">Rank ${i+1}: ${k} Operations</span><span class="data-sm" style="color:var(--secondary)">Coverage ${res}%</span></div>
+              <div class="bar" style="margin:4px 0"><span style="width:${(p.solves/max*100)}%;background:var(--secondary)"></span></div>
+              <div class="meta"><span>Throughput: ${throughput} ops/s</span><span>solve time ${(p.avg_time_s*1000).toFixed(0)}ms</span></div></div>`;
     }).join("");
   }
   const guide=document.getElementById("tierGuide");
@@ -1226,12 +1234,19 @@ function renderTier(m){
       <div class="rule ok"><div class="top"><span class="nm">Current leader</span><span class="data-sm" style="color:var(--primary)">${top}</span></div><div class="d">This is the strongest region right now.</div><div class="meta"><span>Coverage ${topCoverage}%</span><span>Highest volume</span></div></div>
       <div class="rule"><div class="top"><span class="nm">What the numbers mean</span><span class="data-sm" style="color:var(--primary)">simple</span></div><div class="d">More solves means more work handled. Higher coverage means fewer unresolved items. Lower time means the region is moving faster.</div><div class="meta"><span>Fast = good</span><span>Low delay = good</span></div></div>`;
   }
+  const velocityScore=p=>{
+    const coverage=Math.max(0.1, p.avg_coverage||0);
+    const solveTime=Math.max(0.05, p.avg_time_s||0.05);
+    return (p.solves * coverage) / solveTime;
+  };
   const vc=document.getElementById("vChart");
   if(vc){
-    const max=parts[0]?.[1].solves||1;
+    const scores=parts.slice(0,8).map(([k,p])=>[k,p,velocityScore(p)]);
+    const max=scores[0]?.[2]||1;
     vc.innerHTML=parts.slice(0,8).map(([k,p])=>{
-      const height=Math.max(18, Math.round((p.solves/max)*100));
-      return `<div title="${k}: ${p.solves} solves, ${(p.avg_coverage*100).toFixed(0)}% coverage" style="height:${height}%;background:linear-gradient(180deg, rgba(172,237,255,.9), rgba(74,225,118,.7));border-top:2px solid var(--primary);border-radius:2px 2px 0 0"></div>`;
+      const score=velocityScore(p);
+      const height=Math.max(18, Math.round((score/max)*100));
+      return `<div title="${k}: ${score.toFixed(1)} velocity, ${(p.avg_coverage*100).toFixed(0)}% coverage, ${(p.avg_time_s*1000).toFixed(0)}ms avg solve" style="height:${height}%;background:linear-gradient(180deg, rgba(172,237,255,.9), rgba(74,225,118,.7));border-top:2px solid var(--primary);border-radius:2px 2px 0 0"></div>`;
     }).join("") || '<div class="empty">No throughput data yet.</div>';
   }
 }
@@ -1259,7 +1274,7 @@ function renderRules(m){
     <div class="d">${r.d}</div><div class="meta"><span>Limit: ${r.val}</span><span class="state">${r.st==='bad'?'Violation':r.st==='warn'?'Review':'Active'}</span></div></div>`).join("");
   // projection bars (decorative, biased by efficiency)
   const proj=document.getElementById("rulesProj");
-  if(proj&&!proj.children.length){for(let i=0;i<8;i++){const d=document.createElement("div");d.style.height=(50+Math.random()*40)+"%";proj.appendChild(d);}}
+  if(proj&&!proj.children.length){const _vals=[50,62,58,71,49,65,55,68];for(let i=0;i<8;i++){const d=document.createElement("div");d.style.height=_vals[i%_vals.length]+"%";proj.appendChild(d);}}
   // impact alerts
   const al=document.getElementById("rulesAlerts");
   if(viol>0){al.innerHTML=`<div class="alert-box"><div class="h"><span class="material-symbols-outlined" style="color:var(--error);font-size:14px">warning</span><span style="color:var(--error)">Violation Detected</span></div>
@@ -1362,11 +1377,6 @@ function renderReview(m,events){
     cases.push({id:"syn"+worst,type:(p.avg_coverage<0.95||(p.avg_time_s*1000)>90)?"crit":"rec",ts:new Date().toISOString(),tag:p.avg_coverage<0.95?"Coverage below target":"Throughput under watch",
       desc:`${worst} is at ${(p.avg_coverage*100).toFixed(0)}% coverage with ${(p.avg_time_s*1000).toFixed(0)}ms average solve time. Network rate is ${perSecond.toFixed(2)} solves/s.`,flight:flights[hash(worst)%flights.length],sec:worst+"-OPS",action:"Confirm recovery plan"});
   }
-  const reviewedFromFeed=new Set((events||[]).filter(e=>String(e.kind||"").startsWith("review_")).map(e=>{
-    const match=String(e.detail||"").match(/for\s+(.+)$/i);
-    return match?match[1]:null;
-  }).filter(Boolean));
-  cases.splice(0,cases.length,...cases.filter(c=>!reviewedCases.has(c.id)&&!reviewedFromFeed.has(c.id)));
   const open=cases.length;
   setText("revOpen",open);
   setText("revResolved",resolvedCount);
@@ -1384,9 +1394,13 @@ function renderReview(m,events){
   const c=cases.find(x=>x.id===selectedCase)||cases[0];
   if(!c){detail.innerHTML='<div class="empty">Select a case.</div>';}
   else{
+    // derive a simple confidence percentage from partition coverage when possible
+    const metricsForConfidence = getLastMetrics() || {};
+    const region = (c.sec||"").split("-")[0] || null;
+    const confPct = region && metricsForConfidence.partitions && metricsForConfidence.partitions[region] ? Math.round((metricsForConfidence.partitions[region].avg_coverage||0.9)*100) : 90;
     detail.innerHTML=`
       <div class="case-head"><div><div class="ref">CASE REF: ${c.flight}</div><div class="sub">This case needs a human decision before the network moves on.</div></div>
-        <div style="text-align:right"><div class="label-caps">Confidence</div><div class="data-lg" style="color:var(--secondary)">${(90+Math.random()*9).toFixed(1)}%</div>
+        <div style="text-align:right"><div class="label-caps">Confidence</div><div class="data-lg" style="color:var(--secondary)">${confPct}%</div>
         <div class="label-caps" style="margin-top:6px">Priority</div><div class="data-lg" style="color:var(--error)">High</div></div></div>
       <div class="case-grid">
         <div class="schematic"><span class="l label-caps" style="color:var(--primary)">Case reason</span>
@@ -1413,13 +1427,12 @@ function renderReview(m,events){
     <button class="act-btn reject" data-act="reject"><span>Reject case</span><span class="material-symbols-outlined">block</span></button>`;
   act.querySelectorAll(".act-btn").forEach(b=>b.addEventListener("click",()=>{
     const action=b.dataset.act||"review";
-    const caseId=selectedCase||c.id||"current";
+      const caseId=selectedCase||c?.id||"current";
     postAction("/api/review/action",`REVIEW_${action.toUpperCase()}`,{action,case_id:caseId}).then(data=>{
-      reviewedCases.add(caseId);
       resolvedCount++;
-      selectedCase=null;
       pushLocalEvent(`review_${action}`,`Review action ${data.action||action} for ${data.case_id||caseId}`);
       poll();
+        selectedCase=cases.find(x=>x.id!==caseId)?.id||null;
       renderReview(getLastMetrics(),lastEvents);
     });
   }));
@@ -1430,13 +1443,13 @@ function renderChaos(m,events){
   const path=document.getElementById("stabPath");
   const buf=document.getElementById("bufHealth"); const bufBar=document.getElementById("bufBar");
   if(chaosRunning){
-    const s=Math.max(8,40-Math.random()*30); setText("chaosState","RUNNING");
+    const s = Math.max(8, 40 - ((m && m.sla_breaches) ? (m.sla_breaches * 5) : 0)); setText("chaosState","RUNNING");
     if(stab)stab.textContent=s.toFixed(0)+"%"; if(stab)stab.style.color="var(--error)";
     if(path)path.setAttribute("d",`M0,${380-s*3} L1000,${380-s*3}`);
     if(path)path.setAttribute("stroke","#ff5252");
-    if(buf)buf.textContent=Math.max(8,(s*0.3).toFixed(0))+"%"; if(buf)buf.style.color="var(--error)";
-    if(bufBar){bufBar.style.width=Math.max(8,s*0.3)+"%";bufBar.style.background="var(--error)";}
-    const dl=document.getElementById("chaosDelay"); if(dl)dl.textContent=(120+Math.random()*60|0)+"ms";
+    if(buf)buf.textContent=Math.max(8,Math.round(s*0.3))+"%"; if(buf)buf.style.color="var(--error)";
+    if(bufBar){bufBar.style.width=Math.max(8,Math.round(s*0.3))+"%";bufBar.style.background="var(--error)";}
+    const dl=document.getElementById("chaosDelay"); if(dl)dl.textContent=(120 + ((m && m.total_solves) ? (m.total_solves % 60) : 0)) + "ms";
   } else {
     setText("chaosState","IDLE");
     if(stab)stab.textContent="100%"; if(stab)stab.style.color="var(--secondary)";
@@ -1477,8 +1490,7 @@ function poll(){
     window._lastM = m;
     const delta=(m.total_solves||0)-lastSolves;
     if(delta>0){const cap=Math.min(delta,12);const tu=m.tier_usage||{tier1:1,tier2:0,tier3:0};
-      for(let i=0;i<cap;i++){let t=1;const r=Math.random()*(tu.tier1+tu.tier2+tu.tier3+1);
-        if(r<tu.tier1)t=1;else if(r<tu.tier1+tu.tier2)t=2;else t=3;spawnPlane(t,{partition:pick(HUBS)});}}
+      for(let i=0;i<cap;i++){const totalWeight = (tu.tier1||0)+(tu.tier2||0)+(tu.tier3||0) || 1; const idx = (spawnSeq++) % totalWeight; let t = 1; if(idx < (tu.tier1||0)) t = 1; else if(idx < (tu.tier1||0)+(tu.tier2||0)) t = 2; else t = 3; spawnPlane(t,{partition:pick(HUBS, spawnSeq)});}}
     lastSolves=m.total_solves||0;
     const pass=(m.sla_breaches||0)===0;
     const cs=document.getElementById("coreStatus");

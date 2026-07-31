@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.worker
+    environment:
+      PARTITION_ID: default
+      SOLVER_TIER: 1
+    ports:
+      - "8080:8080"
+  dashboard:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile.worker
+    command: ["python", "-m", "deployment.dashboard"]
+    environment:
+      PORT: 8501
+    ports:
+      - "8501:8501"
