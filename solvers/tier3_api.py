@@ -12,6 +12,9 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from enum import Enum
 import json
+import sqlite3
+import threading
+import os
 
 
 class SuggestionStatus(Enum):
@@ -125,6 +128,28 @@ class SuggestionRanker:
         return 0.3 * cost_score + 0.2 * fairness_score + 0.5 * passenger_score
 
 
+class DecisionRepository:
+    """SQLite-backed scheduler decision ledger suitable for replay/audit."""
+
+    def __init__(self, path: str = "skysolver-decisions.db"):
+        self.path = path
+        self._lock = threading.RLock()
+        with sqlite3.connect(self.path) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS decisions (suggestion_id TEXT PRIMARY KEY, partition_id TEXT NOT NULL, status TEXT NOT NULL, scheduler_id TEXT, decided_at TEXT NOT NULL, payload TEXT NOT NULL)")
+
+    def record(self, partition_id: str, suggestion: CrewSuggestion, scheduler_id: str | None) -> None:
+        with self._lock, sqlite3.connect(self.path) as db:
+            db.execute(
+                "INSERT OR REPLACE INTO decisions VALUES (?, ?, ?, ?, ?, ?)",
+                (suggestion.suggestion_id, partition_id, suggestion.status.value, scheduler_id, datetime.now().isoformat(), json.dumps(suggestion.to_dict())),
+            )
+
+    def list(self, partition_id: str) -> List[Dict[str, Any]]:
+        with sqlite3.connect(self.path) as db:
+            rows = db.execute("SELECT payload FROM decisions WHERE partition_id=? ORDER BY decided_at", (partition_id,)).fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+
 def generate_suggestions(
     uncovered_flights: List[Any],  # FlightLeg from rules.engine
     crew_pool: List[Any],  # CrewMember
@@ -138,13 +163,19 @@ def generate_suggestions(
     """
     suggestions: List[CrewSuggestion] = []
 
-    # For now, generate simple "assign any available qualified crew" suggestions
+    from rules.engine import Assignment, validate
+
+    # Generate only independently validated, single-flight recovery options.
     suggestion_id = 0
     for flight in uncovered_flights[:20]:  # Limit suggestions
         for crew in crew_pool:
             if len(suggestions) >= 20:
                 break
             suggestion_id += 1
+            assignment = Assignment(crew.crew_id, [flight], flight.scheduled_dep, flight.scheduled_arr)
+            violations = validate(crew, assignment)
+            if violations:
+                continue
             suggestions.append(CrewSuggestion(
                 suggestion_id=f"{partition_id}_SUG{suggestion_id:04d}",
                 crew_id=crew.crew_id,
@@ -153,7 +184,7 @@ def generate_suggestions(
                 reason=f"Crew {crew.crew_id} qualified for {flight.aircraft_type}",
                 rank=0,
                 legal_compliance=True,
-                duty_time_cost=3.0,
+                duty_time_cost=(flight.scheduled_arr - flight.scheduled_dep).total_seconds() / 3600,
                 seniority_fairness=0.5,
                 passenger_impact_score=0.2,
                 explanation=f"Crew based at {crew.base_hub}, has {flight.aircraft_type} qualification"
@@ -184,6 +215,7 @@ try:
 
     # In-memory storage (replace with Redis/DB in production)
     queues: Dict[str, ReviewQueue] = {}
+    decisions = DecisionRepository(os.environ.get("SKYSOLVER_DECISION_DB", ".sky-decisions.db"))
 
     class ApproveRequest(BaseModel):
         suggestion_ids: TList[str]
@@ -272,6 +304,7 @@ try:
                     s.status = SuggestionStatus.APPROVED
                     s.approved_by = req.scheduler_id
                     s.approved_at = datetime.now()
+                    decisions.record(partition_id, s, req.scheduler_id)
                     approved += 1
                     break
 
@@ -288,6 +321,9 @@ try:
             for s in queue.suggestions:
                 if s.suggestion_id == sid:
                     s.status = SuggestionStatus.REJECTED
+                    s.approved_by = req.scheduler_id
+                    s.approved_at = datetime.now()
+                    decisions.record(partition_id, s, req.scheduler_id)
                     rejected += 1
                     break
 
@@ -303,12 +339,17 @@ try:
             s.status = SuggestionStatus.AUTO_APPROVED
             s.approved_by = scheduler_id
             s.approved_at = datetime.now()
+            decisions.record(partition_id, s, scheduler_id)
 
         return {"auto_approved": len(queue.get_approved())}
 
     @app.get("/tier3/health")
     def health():
         return {"status": "healthy", "queues": len(queues)}
+
+    @app.get("/tier3/decisions/{partition_id}")
+    def decision_history(partition_id: str):
+        return {"partition_id": partition_id, "decisions": decisions.list(partition_id)}
 
 except ImportError:
     # FastAPI not installed - API unavailable

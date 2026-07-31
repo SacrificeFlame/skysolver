@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional
 from enum import Enum
+from core.domain import RuleViolation
 
 
 class Qualification(Enum):
@@ -62,8 +63,15 @@ class RulesEngine:
     MAX_CONSECUTIVE_DAYS = 6
     MAX_DUTY_EXTENSION = 2  # hours beyond max for operational necessity
 
+    RULESET_VERSION = "synthetic-far117-v2"
+    MIN_CONNECTION_MINUTES = 30
+
+    @staticmethod
+    def _violation(code, message, rule_ref, entity_id=None, **details):
+        return RuleViolation(code, message, rule_ref, entity_id=entity_id, details=details)
+
     @classmethod
-    def validate_assignment(cls, crew: CrewMember, assignment: Assignment) -> list[str]:
+    def validate_assignment(cls, crew: CrewMember, assignment: Assignment) -> list[RuleViolation]:
         """Return list of violations. Empty = legal."""
         violations = []
 
@@ -74,6 +82,7 @@ class RulesEngine:
         violations.extend(cls._check_deadhead_limits(assignment))
         violations.extend(cls._check_consecutive_days(crew, assignment))
         violations.extend(cls._check_no_deadhead_loops(assignment))
+        violations.extend(cls._check_temporal_and_geographic_continuity(crew, assignment))
 
         return violations
 
@@ -81,7 +90,7 @@ class RulesEngine:
     def _check_duty_time(cls, assignment: Assignment) -> list[str]:
         duty_hours = (assignment.duty_end - assignment.duty_start).total_seconds() / 3600
         if duty_hours > cls.MAX_DUTY_HOURS + cls.MAX_DUTY_EXTENSION:
-            return [f"Duty time {duty_hours:.1f}h exceeds max {cls.MAX_DUTY_HOURS + cls.MAX_DUTY_EXTENSION}h"]
+            return [cls._violation("DUTY_LIMIT", f"Duty time {duty_hours:.1f}h exceeds max {cls.MAX_DUTY_HOURS + cls.MAX_DUTY_EXTENSION}h", "FAR-117.13", assignment.crew_id, actual_hours=duty_hours)]
         return []
 
     @classmethod
@@ -91,7 +100,7 @@ class RulesEngine:
             for leg in assignment.flight_legs if not leg.is_deadhead
         )
         if flight_hours > cls.MAX_FLIGHT_HOURS:
-            return [f"Flight time {flight_hours:.1f}h exceeds max {cls.MAX_FLIGHT_HOURS}h"]
+            return [cls._violation("FLIGHT_TIME_LIMIT", f"Flight time {flight_hours:.1f}h exceeds max {cls.MAX_FLIGHT_HOURS}h", "FAR-117.11", assignment.crew_id, actual_hours=flight_hours)]
         return []
 
     @classmethod
@@ -100,7 +109,7 @@ class RulesEngine:
             return []
         rest_hours = (assignment.duty_start - crew.last_rest_end).total_seconds() / 3600
         if rest_hours < cls.MIN_REST_HOURS:
-            return [f"Rest period {rest_hours:.1f}h below minimum {cls.MIN_REST_HOURS}h"]
+            return [cls._violation("MIN_REST", f"Rest period {rest_hours:.1f}h below minimum {cls.MIN_REST_HOURS}h", "FAR-117.25", assignment.crew_id, actual_hours=rest_hours)]
         return []
 
     @classmethod
@@ -108,9 +117,13 @@ class RulesEngine:
         violations = []
         for leg in assignment.flight_legs:
             if not leg.is_deadhead:
-                required = Qualification[leg.aircraft_type]
+                try:
+                    required = Qualification[leg.aircraft_type]
+                except KeyError:
+                    violations.append(cls._violation("UNKNOWN_AIRCRAFT", f"Unknown aircraft type {leg.aircraft_type} for flight {leg.flight_id}", "COMPANY-AOM", leg.flight_id))
+                    continue
                 if required not in crew.qualifications:
-                    violations.append(f"Missing qualification {required.value} for flight {leg.flight_id}")
+                    violations.append(cls._violation("MISSING_QUALIFICATION", f"Missing qualification {required.value} for flight {leg.flight_id}", "FAR-121-QUAL", leg.flight_id, required=required.value))
         return violations
 
     @classmethod
@@ -120,7 +133,7 @@ class RulesEngine:
             for leg in assignment.flight_legs if leg.is_deadhead
         )
         if deadhead_hours > cls.MAX_DEADHEAD_HOURS:
-            return [f"Deadhead time {deadhead_hours:.1f}h exceeds max {cls.MAX_DEADHEAD_HOURS}h"]
+            return [cls._violation("DEADHEAD_LIMIT", f"Deadhead time {deadhead_hours:.1f}h exceeds max {cls.MAX_DEADHEAD_HOURS}h", "COMPANY-DEADHEAD", assignment.crew_id)]
         return []
 
     @classmethod
@@ -141,9 +154,26 @@ class RulesEngine:
         seen = set()
         for loc in locations:
             if loc in seen:
-                return [f"Deadhead loop detected: {loc} appears twice in deadhead sequence"]
+                return [cls._violation("DEADHEAD_LOOP", f"Deadhead loop detected: {loc} appears twice in deadhead sequence", "SKYSOLVER-SAFETY-001", assignment.crew_id)]
             seen.add(loc)
         return []
+
+    @classmethod
+    def _check_temporal_and_geographic_continuity(cls, crew, assignment):
+        violations = []
+        legs = sorted(assignment.flight_legs, key=lambda leg: leg.scheduled_dep)
+        for leg in legs:
+            if leg.scheduled_arr <= leg.scheduled_dep:
+                violations.append(cls._violation("INVALID_LEG_TIME", f"Flight {leg.flight_id} arrives before it departs", "DATA-QUALITY", leg.flight_id))
+        if legs and crew.current_location and legs[0].origin != crew.current_location:
+            violations.append(cls._violation("CREW_POSITION", f"Crew {crew.crew_id} is at {crew.current_location}, not {legs[0].origin}", "OPERATIONAL-CONTINUITY", crew.crew_id))
+        for previous, current in zip(legs, legs[1:]):
+            if previous.destination != current.origin:
+                violations.append(cls._violation("LOCATION_DISCONTINUITY", f"Flight sequence jumps from {previous.destination} to {current.origin}", "OPERATIONAL-CONTINUITY", current.flight_id))
+            connection = (current.scheduled_dep - previous.scheduled_arr).total_seconds() / 60
+            if connection < cls.MIN_CONNECTION_MINUTES:
+                violations.append(cls._violation("CONNECTION_TIME", f"Connection before {current.flight_id} is {connection:.0f}m; minimum is {cls.MIN_CONNECTION_MINUTES}m", "COMPANY-CONNECTION", current.flight_id))
+        return violations
 
     @classmethod
     def can_assign(cls, crew: CrewMember, assignment: Assignment) -> bool:
@@ -159,6 +189,6 @@ class RulesEngine:
 
 
 # Convenience function for solver integration
-def validate(crew: CrewMember, assignment: Assignment) -> list[str]:
+def validate(crew: CrewMember, assignment: Assignment) -> list[RuleViolation]:
     """Entry point used by all solver tiers."""
     return RulesEngine.validate_assignment(crew, assignment)

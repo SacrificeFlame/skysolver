@@ -1,5 +1,10 @@
 # SkySolver v2 Architecture
 
+> **Target architecture, not a statement of current deployment.** The verified
+> Python reference implementation and its remaining gaps are tracked in
+> `docs/implementation-status.md`. Rust, Pulsar, Flink and Drools below are
+> evaluated production targets unless explicitly marked live.
+
 ## 1. Overview
 
 SkySolver v2 is a resilient crew rescheduling engine designed to avoid the catastrophic failure modes of its predecessor during high-stress events. The system employs **regional partitioning**, **tiered solving with graceful degradation**, **event-sourced state**, and **elastic compute** to ensure continuous operation under load.
