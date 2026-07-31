@@ -74,3 +74,19 @@ def test_review_action_endpoint_records_event():
     assert data["status"] == "ok"
     assert data["action"] == "approve"
     assert data["case_id"] == "SK-921-TRIAGE"
+
+
+def test_versioned_overview_identifies_synthetic_data():
+    status, ctype, body = _request("/api/v1/overview")
+    data = json.loads(body)
+    assert status == 200 and ctype == "application/json"
+    assert data["api_version"] == "v1"
+    assert data["data_mode"] == "synthetic-demo"
+    assert {"disruption", "recovery", "partitions", "passengers"} <= data.keys()
+
+
+def test_recovery_request_is_audited_and_accepted():
+    payload = json.dumps({"partition_id": "DEN"}).encode()
+    status, _, body = _request("/api/v1/recovery/run", method="POST", body=payload)
+    assert status == 202
+    assert json.loads(body)["partition_id"] == "DEN"

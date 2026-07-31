@@ -12,6 +12,7 @@ import os
 import json
 import math
 import threading
+import hmac
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -308,6 +309,29 @@ def get_metrics() -> Dict[str, Any]:
     return {**_metrics, "uptime_s": uptime}
 
 
+def get_operational_overview() -> Dict[str, Any]:
+    """Versioned dashboard contract; all demo data is explicitly identified."""
+    metrics = get_metrics()
+    events = _load_events()
+    return {
+        "api_version": "v1", "data_mode": "synthetic-demo",
+        "generated_at": datetime.now().isoformat(),
+        "disruption": {
+            "type": "winter-weather", "epicenter": "DEN", "status": "active",
+            "affected_flights": sum(max(1, int((1 - p.get("avg_coverage", 1)) * 100)) for p in metrics.get("partitions", {}).values()),
+        },
+        "recovery": {
+            "total_solves": metrics.get("total_solves", 0),
+            "tier_usage": metrics.get("tier_usage", {}),
+            "legal_violations": metrics.get("legal_violations", 0),
+            "pending_intervention": sum(1 for e in events if e.get("kind") in {"sla_breach", "review_required"}),
+        },
+        "partitions": metrics.get("partitions", {}),
+        "passengers": metrics.get("passenger_metrics", {}),
+        "recent_decisions": events[-25:],
+    }
+
+
 # --------------------------------------------------------------------------
 # Chaos / replay trigger (drives the live dashboard with real solve data)
 # --------------------------------------------------------------------------
@@ -382,6 +406,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._serve_json(_load_events())
         elif path == "/api/health":
             self._serve_json({"status": "healthy"})
+        elif path == "/api/v1/health/live":
+            self._serve_json({"status": "live", "component": "operations-api"})
+        elif path == "/api/v1/health/ready":
+            self._serve_json({"status": "ready", "event_store": "file-demo", "ruleset": "synthetic-far117-v2"})
+        elif path == "/api/v1/overview":
+            self._serve_json(get_operational_overview())
         elif path == "/api/login":
             self._serve_json({"ok": True, "redirect": "/dashboard"})
         elif path.startswith("/stitch/"):
@@ -423,6 +453,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/api/chaos":
             self._serve_json({"status": trigger_chaos()})
+        elif path == "/api/v1/recovery/run":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = self.rfile.read(length).decode("utf-8") if length else "{}"
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                self._serve_json({"error": "invalid_json"}, status=400)
+                return
+            partition = str(payload.get("partition_id", "DEN"))
+            record_ui_action("recovery_requested", "Tiered recovery orchestration requested", partition)
+            self._serve_json({"status": "accepted", "partition_id": partition, "data_mode": "synthetic-demo"}, status=202)
         elif path == "/api/rules/validate":
             record_ui_action("rules_validate", "Rules stack validated")
             self._serve_json({"status": "ok", "action": "validate"})
@@ -452,7 +493,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 payload = {}
             user = payload.get("username", "")
             password = payload.get("password", "")
-            if user == "ops" and password == "sky2026":
+            expected_user = os.environ.get("SKYSOLVER_DEMO_USER", "ops")
+            expected_password = os.environ.get("SKYSOLVER_DEMO_PASSWORD", "sky2026")
+            if hmac.compare_digest(str(user), expected_user) and hmac.compare_digest(str(password), expected_password):
                 self._serve_json({"ok": True, "redirect": "/dashboard"})
             else:
                 self._serve_json({"ok": False, "error": "Invalid credentials"}, status=401)

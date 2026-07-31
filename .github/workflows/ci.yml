@@ -27,3 +27,5 @@ jobs:
         run: python -m deployment.worker --partition DEN --tier 1 --time-budget 0.2
       - name: Smoke-test Tier 2 upgrade path
         run: python -m deployment.worker --partition DEN --tier 2 --time-budget 0.2
+      - name: Verify deterministic recovery orchestration
+        run: python -m pytest tests/test_orchestrator.py tests/test_event_store_v2.py -q

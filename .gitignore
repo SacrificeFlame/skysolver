@@ -1,31 +1,7 @@
-﻿# Byte-compiled / cache
+.sky-decisions.db
+.sky_metrics.json
+.sky_events.json
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Ignore event and metrics files
-.sky_events.json
-.sky_metrics.json
-
-# Virtualenvs
-.env
-.venv
-env/
-venv/
-
-# Editor and OS files
-.vscode/
-*.swp
-*.swo
-.DS_Store
-
-# Local docker overrides
-docker-compose.override.yml
-
-# Known pycache folders
-data/__pycache__/
-deployment/__pycache__/
-passengers/__pycache__/
-rules/__pycache__/
-solvers/__pycache__/
-tests/__pycache__/
+.pytest_cache/
+.venv/

@@ -53,12 +53,12 @@ These commands generate synthetic inputs and exit after processing them. Queue c
 python -m pytest -q
 ```
 
-The suite covers rules, Tier 1 behavior, passenger recovery, dashboard routes, and worker result handling. Passing tests demonstrate the modeled prototype behavior only; they are not evidence of regulatory certification or production-scale recovery performance.
+The suite covers structured legality, optimistic event concurrency, tier orchestration, durable human decisions, passenger recovery, versioned dashboard routes, and worker result handling. Passing tests demonstrate modeled prototype behavior only; they are not evidence of regulatory certification or production-scale recovery performance.
 
 ## Important limitations
 
-- Tier 2 is not yet a genuine MILP/column-generation implementation.
-- Tier 3 suggestion generation is simplified and uses in-memory queues.
+- Tier 2 builds legal multi-leg columns but its master selection is still a heuristic, not a genuine MILP/CP-SAT implementation.
+- Tier 3 queues are process-local; scheduler decisions are persisted to SQLite but are not deployed to an external carrier schedule.
 - Pulsar, BookKeeper, Flink, and production worker queues are not connected.
 - The dashboard mixes backend metrics with an explicitly synthetic scenario.
 - Authentication and authorization are demo-grade.

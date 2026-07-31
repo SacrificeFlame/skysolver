@@ -106,7 +106,7 @@ class ColumnGenerationSolver:
         for _ in range(3):  # Extend up to 3 levels deep
             if time.monotonic() > deadline:
                 break
-            extended = self._extend_columns(columns, crew, deadline)
+            extended = self._extend_columns(columns, crew, flights, deadline)
             if not extended:
                 break
             columns.extend(extended)
@@ -117,6 +117,7 @@ class ColumnGenerationSolver:
         self,
         existing: List[Column],
         crew: CrewMember,
+        flights: List[FlightLeg],
         deadline: float
     ) -> List[Column]:
         """Extend existing columns by adding one more leg."""
@@ -128,7 +129,18 @@ class ColumnGenerationSolver:
 
             # Find flights that start where the last flight ends
             last_dest = col.legs[-1].destination
-            # For now, just look for flights starting at last destination
+            used = {leg.flight_id for leg in col.legs}
+            for flight in flights:
+                if time.monotonic() > deadline:
+                    break
+                if flight.flight_id in used or flight.origin != last_dest:
+                    continue
+                if flight.scheduled_dep < col.legs[-1].scheduled_arr + timedelta(minutes=RulesEngine.MIN_CONNECTION_MINUTES):
+                    continue
+                legs = list(col.legs) + [flight]
+                candidate = Assignment(crew.crew_id, legs, legs[0].scheduled_dep, legs[-1].scheduled_arr)
+                if not validate(crew, candidate):
+                    extended.append(Column(crew.crew_id, tuple(legs), self._compute_duty_cost(legs)))
 
         return extended
 
@@ -182,7 +194,7 @@ class ColumnGenerationSolver:
                     selected[flight.flight_id] = []
                 selected[flight.flight_id].append(best_col)
 
-        return selected if len(covered_flights) == len(flights) else None
+        return selected
 
     def solve(
         self,

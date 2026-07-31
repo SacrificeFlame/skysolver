@@ -16,6 +16,11 @@ from typing import List, Dict, Optional, Iterator, Any
 from enum import Enum
 import json
 import uuid
+import threading
+
+
+class ConcurrencyError(RuntimeError):
+    """Raised when a writer attempts to append against a stale stream."""
 
 
 class EventType(Enum):
@@ -39,6 +44,9 @@ class CrewEvent:
     partition_id: str
     timestamp: datetime
     payload: Dict[str, Any]
+    sequence: int = 0
+    correlation_id: str = ""
+    causation_id: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -48,6 +56,9 @@ class CrewEvent:
             "partition_id": self.partition_id,
             "timestamp": self.timestamp.isoformat(),
             "payload": self.payload,
+            "sequence": self.sequence,
+            "correlation_id": self.correlation_id,
+            "causation_id": self.causation_id,
         }
 
     @classmethod
@@ -59,6 +70,9 @@ class CrewEvent:
             partition_id=d["partition_id"],
             timestamp=datetime.fromisoformat(d["timestamp"]),
             payload=d["payload"],
+            sequence=d.get("sequence", 0),
+            correlation_id=d.get("correlation_id", ""),
+            causation_id=d.get("causation_id"),
         )
 
 
@@ -101,17 +115,38 @@ class EventStore:
         # partition_id -> list of events (ordered)
         self._events: Dict[str, List[CrewEvent]] = {}
         self._all_events: List[CrewEvent] = []
+        self._event_ids: set[str] = set()
+        self._stream_versions: Dict[tuple[str, str], int] = {}
+        self._lock = threading.RLock()
 
-    def append(self, event: CrewEvent) -> None:
-        """Append an event to the stream. Immutable once written."""
-        if event.partition_id not in self._events:
-            self._events[event.partition_id] = []
-        self._events[event.partition_id].append(event)
-        self._all_events.append(event)
+    def append(self, event: CrewEvent, expected_version: Optional[int] = None) -> bool:
+        """Idempotently append with optimistic concurrency control.
+
+        Returns ``False`` for an already-seen event id. A caller that supplies
+        ``expected_version`` is protected from solving against stale crew state.
+        """
+        with self._lock:
+            if event.event_id in self._event_ids:
+                return False
+            key = (event.partition_id, event.crew_id)
+            current = self._stream_versions.get(key, 0)
+            if expected_version is not None and expected_version != current:
+                raise ConcurrencyError(f"expected stream version {expected_version}, found {current}")
+            event.sequence = current + 1
+            if not event.correlation_id:
+                event.correlation_id = event.event_id
+            self._events.setdefault(event.partition_id, []).append(event)
+            self._all_events.append(event)
+            self._event_ids.add(event.event_id)
+            self._stream_versions[key] = event.sequence
+            return True
+
+    def stream_version(self, partition_id: str, crew_id: str) -> int:
+        return self._stream_versions.get((partition_id, crew_id), 0)
 
     def get_partition_stream(self, partition_id: str) -> Iterator[CrewEvent]:
         """Read stream for one partition (no cross-partition reads during solve)."""
-        for e in self._events.get(partition_id, []):
+        for e in sorted(self._events.get(partition_id, []), key=lambda item: (item.sequence, item.timestamp, item.event_id)):
             yield e
 
     def get_crew_events(self, crew_id: str, partition_id: str) -> List[CrewEvent]:

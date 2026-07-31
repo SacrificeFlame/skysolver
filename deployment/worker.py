@@ -10,6 +10,9 @@ from __future__ import annotations
 import argparse
 import time
 import json
+import os
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime
 from typing import Optional
 
@@ -20,6 +23,29 @@ from data.generate import generate_crew_pool, generate_flight_legs, partition_by
 from solvers.tier1 import PartitionResult, solve_partition
 from solvers.tier2 import solve_partition as tier2_solve
 from state.event_store import EventStore, create_crew_event, CrossPartitionReconciler
+
+
+class _HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path in ("/health", "/ready"):
+            body = json.dumps({"status": "healthy", "ready": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, *args):
+        pass
+
+
+def start_health_server(port: int = 8080):
+    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
 
 
 def solve_partition_request(
@@ -97,6 +123,7 @@ def main():
     parser.add_argument("--time-budget", type=float, default=1.0, help="Time budget seconds")
     args = parser.parse_args()
 
+    start_health_server(int(os.environ.get("HEALTH_PORT", "8080")))
     print(f"Worker started for partition={args.partition}, tier={args.tier}")
 
     # In production: consume from Pulsar queue
