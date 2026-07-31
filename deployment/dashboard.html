@@ -679,15 +679,15 @@ function runwayA(){return {id:"A",s:[0.13,0.66],e:[0.93,0.20],labelStart:"33L",l
 function runwayB(){return {id:"B",s:[0.11,0.74],e:[0.91,0.28],labelStart:"33R",labelEnd:"15L"};}
 const GATE_Y=0.88,GATE_TOP=0.76,TAXI_Y=0.72,GATE_X0=0.05,GATE_DX=0.026,N_GATES=11;
 function gateX(i){return GATE_X0+(i%N_GATES)*GATE_DX;}
-let planes=[]; let seq=0; const MAX_PLANES=70; let runwayLock=null;
+let planes=[]; let seq=0; const MAX_PLANES=70; let runwayLocks={};
 // Deterministic helpers (avoid random UI noise; use seq-based hashing)
 function seededFloat(seed){return (hash(String(seed)) % 1000) / 1000;}
 function rnd(a,b,seed){seed = seed||seq; return a + seededFloat(seed) * (b - a);}
 function pick(a,seed){seed = seed||seq; return a[hash(String(seed)) % a.length];}
 function makeFlightId(seed){seed = seed||seq; const p=["SK","AA","UA","DL","WN"]; const code = p[hash(String(seed))%p.length]; return code + (100 + (hash(String(seed)+"id") % 900));}
-function runwayOccupied(){return runwayLock!==null;}
-function claimRunway(p){if(!runwayLock){runwayLock=p.runwayId; p.hold=false; return true;} return runwayLock===p.runwayId;}
-function releaseRunway(p){if(runwayLock===p.runwayId) runwayLock=null;}
+function runwayOccupied(runwayId){if(runwayId){return !!runwayLocks[runwayId];} return Object.keys(runwayLocks).length>0;}
+function claimRunway(p){const id=p.runwayId; if(!runwayLocks[id]){runwayLocks[id]=p.id; p.hold=false; return true;} return runwayLocks[id]===p.id;}
+function releaseRunway(p){const id=p.runwayId; if(runwayLocks[id]===p.id){ delete runwayLocks[id]; }}
 /* Speeds are in "fraction of segment per second". Airborne = fast, but on final
    approach / roll-out / taxi a real aircraft is crawling. Tuned so a full
    taxi→takeoff→climb plays over ~25-40s and a landing rolls out gently. */
@@ -722,14 +722,17 @@ function updatePlane(p,dt){
   // hold short / go-around logic for runway access
   const nextT = p.t + sp * dt;
   if(p.path.kind==="out" && p.seg===3 && !claimRunway(p) && nextT >= 0.02){
-    p.t = Math.min(p.t, 0.98);
+    // hold before entering takeoff roll if runway unavailable
+    p.t = Math.min(p.t, 0.02);
     p.phase = "HOLD SHORT";
     p.hold = true;
     return;
   }
-  if(p.path.kind==="in" && p.seg===0 && !claimRunway(p) && nextT >= 0.85){
-    p.t = Math.min(p.t, 0.85);
-    p.phase = p.hold?"GO-AROUND":"HOLD OVER";
+  // For inbound (landing) ensure aircraft wait before entering the runway segment (seg===1 is runway), not at its very start.
+  if(p.path.kind==="in" && p.seg===1 && !claimRunway(p) && nextT >= 0.02){
+    // hold short before the runway threshold
+    p.t = Math.min(p.t, 0.02);
+    p.phase = p.hold?"GO-AROUND":"HOLD SHORT";
     p.hold = true;
     return;
   }
@@ -749,7 +752,15 @@ function updatePlane(p,dt){
     }
   }
 
-  const nx = lerp(a[0], b[0], p.t), ny = lerp(a[1], b[1], p.t);
+  let nx = lerp(a[0], b[0], p.t), ny = lerp(a[1], b[1], p.t);
+  // snap to runway centerline if this segment corresponds to a runway edge
+  const rA = runwayA(), rB = runwayB();
+  function _same(u,v){return Math.abs(u[0]-v[0])<1e-6 && Math.abs(u[1]-v[1])<1e-6;}
+  if( (_same(a,rA.s) && _same(b,rA.e)) || (_same(a,rA.e) && _same(b,rA.s)) || (_same(a,rB.s) && _same(b,rB.e)) || (_same(a,rB.e) && _same(b,rB.s)) ){
+    // project (nx,ny) onto the exact runway line between a and b to avoid lateral offset
+    const vx = b[0]-a[0], vy = b[1]-a[1]; const wx = nx - a[0], wy = ny - a[1]; const vlen2 = vx*vx + vy*vy;
+    if(vlen2>0){ const projT = (wx*vx + wy*vy)/vlen2; nx = a[0] + vx*projT; ny = a[1] + vy*projT; }
+  }
   const dx = nx - p.x, dy = ny - p.y;
   if(dx || dy){
     const target = Math.atan2(dy, dx);
