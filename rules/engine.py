@@ -5,7 +5,6 @@ Tests serve as the primary specification. All rules must be independently
 testable and called by every solver tier.
 """
 
-import pytest
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional

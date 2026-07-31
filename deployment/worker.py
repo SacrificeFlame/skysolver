@@ -17,7 +17,7 @@ from typing import Optional
 # from pulsar import Client
 
 from data.generate import generate_crew_pool, generate_flight_legs, partition_by_hub
-from solvers.tier1 import solve_partition
+from solvers.tier1 import PartitionResult, solve_partition
 from solvers.tier2 import solve_partition as tier2_solve
 from state.event_store import EventStore, create_crew_event, CrossPartitionReconciler
 
@@ -54,17 +54,28 @@ def solve_partition_request(
                     complete=True,
                 )
     else:
+        # Tier 2 is an upgrade path, so always provide a legal Tier 1
+        # incumbent. If the optimizer times out, the worker can still return
+        # the best known legal schedule rather than an empty result.
+        tier1_incumbent = solve_partition(
+            crew_pool,
+            flights,
+            time_budget_s=min(0.1, time_budget),
+        )
         assignments, uncovered, elapsed, converged = tier2_solve(
-            crew_pool, flights, time_budget_s=time_budget
+            crew_pool,
+            flights,
+            time_budget_s=time_budget,
+            tier1_initial=tier1_incumbent.assignments,
         )
         tier_used = 2 if converged else 1
-        res = type('R', (), {
-            'assignments': assignments,
-            'uncovered': uncovered,
-            'elapsed_s': elapsed,
-            'cost': sum(len(a.flight_legs) for a in assignments),
-            'complete': converged,
-        })()
+        res = PartitionResult(
+            assignments=assignments,
+            uncovered=uncovered,
+            elapsed_s=elapsed,
+            cost=sum(len(a.flight_legs) for a in assignments),
+            complete=converged,
+        )
 
     elapsed = time.monotonic() - start
 
