@@ -1,22 +1,18 @@
-# Design QA — Airline Recovery Workspace
+# Design QA — India Airline Recovery Workspace
 
-Visual target: the selected combined Option 1 + Option 3 airline OCC direction, expanded into the approved multi-workspace information architecture.
-
-Viewport tested: 1440 × 900.
+Viewport: 1440 × 900. Data mode: clearly labelled synthetic India network.
 
 ## Results
 
-- P0: none.
-- P1: none.
-- P2: none.
-- P3: some secondary tables intentionally scroll inside their workspace at lower-height desktop resolutions.
-- The global application shell, active disruption, data freshness, solver health, worker capacity, operator identity, and synthetic-data state remain visible across routes.
-- Dedicated routes verified for Overview, Disruptions, Crew Recovery, Flights, Aircraft, Planned Routes, Solver Tiers, Tier 1, Tier 2, Tier 3, Decisions, Deployment, and Audit.
-- Planned Routes shows scheduled and proposed routes, weather conflict, origin/destination, route duration, crew movement chain, and movement feasibility checks.
-- Crew Recovery exposes the original and proposed assignment, duty legality, physical movement, passenger impact, residual risk, ruleset, and state version.
-- The recovery workflow was exercised through solve → approve → independent validation → deployment handoff.
+- P0/P1/P2 issues: none.
+- Planned Routes is API-backed through `GET /api/v1/routes` and `GET /api/v1/routes/{flight_id}`.
+- Five distinct routes verified: AI421 DEL–BOM, 6E203 BLR–DEL, UK945 DEL–HYD, AI807 BOM–DEL, and 6E531 DEL–CCU.
+- Selecting 6E203 changed the map, airport labels, distance, timings, aircraft, restriction and movement chain from AI421.
+- Flight route, aircraft rotation, crew pairing, deadhead journey, recovery changes and cross-partition controls are interactive.
+- Movement validation changes the selected plan to a validated state.
+- Delhi low-visibility disruption, Indian airports, VT registrations, IST operations, rupee costs and DGCA FDTL terminology are used in the active product surfaces.
 - Browser console errors: none.
-- Overview document height equals viewport height at 1440 × 900.
-- Product-level synthetic values are explicitly labelled and existing backend legality/deployment responses remain authoritative.
+- Frontend production build passed.
+- 48 backend and contract tests passed.
 
 final result: passed

@@ -422,6 +422,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._api(lambda: recovery_store.disruption(path.rsplit("/", 1)[-1]))
         elif path.startswith("/api/v1/flights/"):
             self._api(lambda: recovery_store.flight(path.rsplit("/", 1)[-1]))
+        elif path == "/api/v1/routes":
+            self._api(lambda: {"items": recovery_store.routes(), "data_mode": "synthetic-demo"})
+        elif path.startswith("/api/v1/routes/"):
+            self._api(lambda: recovery_store.route(path.rsplit("/", 1)[-1]))
         elif path == "/api/v1/audit":
             self._serve_json({"items": recovery_store.audit()})
         elif path == "/api/v1/events":
