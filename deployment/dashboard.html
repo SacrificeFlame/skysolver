@@ -149,6 +149,35 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
 .tool-overlay .div{width:1px;height:18px;background:var(--outline-muted);margin:0 4px;}
 #airport{position:absolute;inset:0;width:100%;height:100%;display:block;}
 #airport.iso{filter:brightness(1.04);}
+.flight-sidepanel{
+  position:absolute;right:354px;top:14px;bottom:14px;width:320px;z-index:24;pointer-events:auto;
+  border-radius:8px;padding:12px;display:none;overflow:auto;
+}
+.flight-sidepanel.show{display:block;}
+.flight-sidepanel .row{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--outline-muted);}
+.flight-sidepanel .row:last-child{border-bottom:none;}
+.flight-sidepanel .k{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--outline);text-transform:uppercase;letter-spacing:.08em;}
+.flight-sidepanel .v{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--on-surface);}
+.ops-bottom-strip{
+  position:absolute;left:14px;right:354px;bottom:14px;z-index:24;border-radius:8px;padding:8px 10px;pointer-events:auto;
+  display:flex;gap:10px;align-items:center;min-height:54px;
+}
+.timeline-item{flex:1;min-width:0;border:1px solid var(--outline-muted);border-radius:4px;padding:6px;background:rgba(255,255,255,.03);}
+.timeline-item .t{font-family:"JetBrains Mono",monospace;font-size:9px;color:var(--outline);text-transform:uppercase;letter-spacing:.08em;}
+.timeline-item .v{font-family:"JetBrains Mono",monospace;font-size:10px;color:var(--on-surface);margin-top:2px;}
+.timeline-item.active{border-color:rgba(172,237,255,.55);box-shadow:0 0 12px rgba(172,237,255,.2) inset;}
+.timeline-item.active .v{color:var(--primary);}
+.notif-stack{position:absolute;left:50%;top:62px;transform:translateX(-50%);z-index:26;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.notif{
+  font-family:"JetBrains Mono",monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--on-surface);padding:8px 12px;border-radius:4px;border:1px solid var(--outline-muted);
+  background:rgba(3,10,18,.9);opacity:0;transform:translateY(-8px);animation:notifIn .35s ease forwards;
+}
+.notif.warn{border-color:rgba(255,180,174,.5);color:var(--tertiary);}
+.notif.ok{border-color:rgba(74,225,118,.45);color:var(--secondary);}
+@keyframes notifIn{to{opacity:1;transform:translateY(0);}}
+.heat-chips{display:flex;gap:4px;margin-left:8px;}
+.heat-chips .chip{font-size:8px;padding:4px 8px;}
 
 .panel{padding:12px;border-radius:6px;display:flex;flex-direction:column;min-height:0;}
 .panel h3{margin:0 0 10px;display:flex;align-items:center;justify-content:space-between;}
@@ -369,7 +398,19 @@ footer.bottombar .seg .v{font-family:"JetBrains Mono",monospace;font-size:11px;c
           <span class="div"></span>
           <span class="chip" id="btn3d" title="Toggle 3D isometric">3D_ISOMETRIC</span>
           <span class="chip on" id="btnLayers" title="Toggle grid + radar layers">LAYERS</span>
+          <span class="chip" id="btnResetView" title="Reset camera">RESET</span>
+          <span class="chip" id="btnFit" title="Fit airport">FIT</span>
+          <div class="heat-chips">
+            <span class="chip on" id="layerTaxi" title="Taxiway congestion heatmap">TAXI</span>
+            <span class="chip on" id="layerGate" title="Gate utilization heatmap">GATE</span>
+            <span class="chip on" id="layerRunway" title="Runway occupancy heatmap">RWY</span>
+            <span class="chip" id="layerGround" title="Ground traffic heatmap">GND</span>
+            <span class="chip on" id="layerRecovery" title="Recovery activity overlay">RCV</span>
+          </div>
         </div>
+        <div class="notif-stack" id="opsNotifs"></div>
+        <div class="flight-sidepanel glass-soft" id="flightPanel"></div>
+        <div class="ops-bottom-strip glass-soft" id="opsTimeline"></div>
         <!-- right terminal -->
         <div class="hud hud-right">
           <div class="panel glass-soft" style="flex:1">
@@ -643,6 +684,186 @@ let lastEvents = [];
 let selectedCase = null;
 let resolvedCount = 0;
 let chaosRunning = false;
+let selectedAircraftId = null;
+let processedEventCount = 0;
+
+const OPS_STAGES = ["Scheduled Departure","Estimated Departure","Boarding","Pushback","Taxi","Takeoff"];
+const AIRCRAFT_STATUSES = {
+  normal: {label:"Normal", color:"#acedff"},
+  taxiing: {label:"Taxiing", color:"#e1edf0"},
+  waiting: {label:"Waiting", color:"#ffdbd7"},
+  delayed: {label:"Delayed", color:"#ff9f6b"},
+  conflict: {label:"Conflict", color:"#ff5252"},
+  recovery: {label:"Recovery Complete", color:"#4ae176"}
+};
+const GATE_STATE_COLORS = {
+  available: "rgba(74,225,118,0.75)",
+  occupied: "rgba(172,237,255,0.72)",
+  boarding: "rgba(172,237,255,0.95)",
+  delayed: "rgba(255,159,107,0.88)",
+  closed: "rgba(255,82,82,0.86)",
+  maintenance: "rgba(255,219,215,0.7)"
+};
+const heatLayerState = {
+  taxi: true,
+  gate: true,
+  runway: true,
+  ground: false,
+  recovery: true
+};
+let gateStateById = {};
+let groundVehicles = [];
+const recoveryHighlights = [];
+
+/** Airport digital-twin model in normalized world coordinates. */
+function buildAirportModel(){
+  const taxiways = [
+    [[0.08,0.70],[0.22,0.70],[0.40,0.70],[0.62,0.70],[0.82,0.62],[0.93,0.52]],
+    [[0.14,0.76],[0.14,0.64],[0.16,0.52]],
+    [[0.30,0.76],[0.30,0.64],[0.28,0.56]],
+    [[0.46,0.76],[0.46,0.64],[0.44,0.58]],
+    [[0.62,0.76],[0.62,0.64],[0.58,0.60]]
+  ];
+  const runways = [runwayA(), runwayB()];
+  const serviceRoads = [
+    [[0.05,0.92],[0.95,0.92]],
+    [[0.88,0.92],[0.88,0.70]],
+    [[0.12,0.92],[0.12,0.80]]
+  ];
+  const gates = Array.from({length:N_GATES},(_,i)=>({
+    id:`G${String(i+1).padStart(2,"0")}`,
+    x: gateX(i),
+    z: GATE_Y,
+    jetBridgeTo:[gateX(i), GATE_TOP]
+  }));
+  return {
+    terminal:{x0:0.04,z0:0.88,x1:0.38,z1:0.96},
+    aprons:[
+      {x0:0.08,z0:0.64,x1:0.76,z1:0.84,kind:"main"},
+      {x0:0.78,z0:0.72,x1:0.94,z1:0.84,kind:"cargo"},
+      {x0:0.78,z0:0.58,x1:0.94,z1:0.70,kind:"maintenance"}
+    ],
+    tower:{x0:0.42,z0:0.88,x1:0.47,z1:0.93,h:0.09},
+    fuelFarm:{x0:0.80,z0:0.52,x1:0.92,z1:0.60},
+    gates,
+    taxiways,
+    runways,
+    serviceRoads,
+    holdingPoints:[{x:0.16,z:0.70},{x:0.30,z:0.70},{x:0.46,z:0.70},{x:0.62,z:0.70}]
+  };
+}
+let AIRPORT_MODEL = null;
+
+/** Initialize gate state map once so gate occupancy can be rendered independently. */
+function initGateStates(){
+  if(!AIRPORT_MODEL) return;
+  AIRPORT_MODEL.gates.forEach(g=>{gateStateById[g.id] = {state:"available", flight:null};});
+}
+
+/** Initialize moving service vehicles for fuel, baggage, pushback and maintenance activity. */
+function initGroundVehicles(){
+  if(!AIRPORT_MODEL) return;
+  if(groundVehicles.length) return;
+  const defs = [
+    {id:"fuel-1",kind:"Fuel Truck",color:"#4ae176",speed:0.09,path:[[0.82,0.92],[0.82,0.78],[0.74,0.78],[0.62,0.78],[0.52,0.84]]},
+    {id:"bag-1",kind:"Baggage Cart",color:"#acedff",speed:0.11,path:[[0.10,0.92],[0.20,0.92],[0.26,0.84],[0.34,0.84],[0.40,0.92]]},
+    {id:"push-1",kind:"Pushback Tractor",color:"#ffdbd7",speed:0.08,path:[[0.14,0.84],[0.14,0.92],[0.28,0.92],[0.28,0.84]]},
+    {id:"maint-1",kind:"Maintenance",color:"#ff9f6b",speed:0.08,path:[[0.90,0.84],[0.90,0.70],[0.84,0.66],[0.84,0.78]]},
+    {id:"cat-1",kind:"Catering",color:"#e1edf0",speed:0.10,path:[[0.48,0.92],[0.56,0.92],[0.56,0.84],[0.48,0.84]]}
+  ];
+  groundVehicles = defs.map(v=>({id:v.id,kind:v.kind,color:v.color,speed:v.speed,path:v.path,seg:0,t:0,x:v.path[0][0],z:v.path[0][1]}));
+}
+
+/** Keep vehicle movement smooth and deterministic along service roads. */
+function updateGroundVehicles(dt){
+  for(const v of groundVehicles){
+    const a = v.path[v.seg], b = v.path[(v.seg+1)%v.path.length];
+    const next = v.t + v.speed*dt;
+    if(next >= 1){ v.t = next - 1; v.seg = (v.seg+1) % v.path.length; }
+    else v.t = next;
+    const na = v.path[v.seg], nb = v.path[(v.seg+1)%v.path.length];
+    v.x = lerp(na[0], nb[0], v.t);
+    v.z = lerp(na[1], nb[1], v.t);
+  }
+}
+
+/** Derive airline-operational status from aircraft phase and delay for consistent color coding. */
+function statusForPlane(p){
+  if(p.recoveryCompleteUntil && p.recoveryCompleteUntil > performance.now()) return "recovery";
+  if(p.hold) return p.delayMin > 12 ? "delayed" : "waiting";
+  if(p.phase === "HOLD SHORT") return "waiting";
+  if(p.phase === "LANDING" && runwayOccupied(p.runwayId) && runwayLocks[p.runwayId] !== p.id) return "conflict";
+  if(p.delayMin > 12) return "delayed";
+  if(p.phase.includes("TAXI") || p.phase==="PUSHBACK") return "taxiing";
+  return "normal";
+}
+
+/** Render side-panel details for the selected aircraft. */
+function renderFlightPanel(){
+  const panel = document.getElementById("flightPanel");
+  if(!panel) return;
+  const p = planes.find(x=>x.id===selectedAircraftId);
+  if(!p){ panel.classList.remove("show"); panel.innerHTML=""; return; }
+  panel.classList.add("show");
+  const st = AIRCRAFT_STATUSES[statusForPlane(p)];
+  panel.innerHTML = `
+    <h3><span class="label-caps">Flight Detail</span><span class="data-sm" style="color:${st.color}">${st.label}</span></h3>
+    <div class="row"><span class="k">Flight</span><span class="v">${p.id}</span></div>
+    <div class="row"><span class="k">Type</span><span class="v">${p.aircraftType||"A320"}</span></div>
+    <div class="row"><span class="k">Gate</span><span class="v">${p.gateId||"—"}</span></div>
+    <div class="row"><span class="k">Destination</span><span class="v">${p.destination||p.partition||"—"}</span></div>
+    <div class="row"><span class="k">Delay</span><span class="v">${Math.max(0,Math.round(p.delayMin||0))} min</span></div>
+    <div class="row"><span class="k">Crew Status</span><span class="v">${p.crewStatus||"Ready"}</span></div>
+    <div class="row"><span class="k">Duty Remaining</span><span class="v">${(p.dutyRemainingHrs||8).toFixed(1)}h</span></div>
+    <div class="row"><span class="k">Passengers</span><span class="v">${p.passengers||148}</span></div>
+    <div class="row"><span class="k">Delay Reason</span><span class="v">${p.delayReason||"On schedule"}</span></div>
+    <div class="row"><span class="k">Recovery Timeline</span><span class="v">${p.recoveryTimeline||"No recovery action needed"}</span></div>`;
+}
+
+/** Render a live stage timeline for the currently selected (or most recent) aircraft. */
+function renderOpsTimeline(){
+  const el = document.getElementById("opsTimeline");
+  if(!el) return;
+  const p = planes.find(x=>x.id===selectedAircraftId) || planes[planes.length-1];
+  if(!p){
+    el.innerHTML = '<div class="empty">No active departure timeline.</div>';
+    return;
+  }
+  const stageMap = {
+    "GATE":"Scheduled Departure","PUSHBACK":"Pushback","TAXI":"Taxi","TAKEOFF":"Takeoff","AIRBORNE":"Takeoff","APPROACH":"Estimated Departure","LANDING":"Taxi","ROLL-OUT":"Taxi","DOCKED":"Boarding","HOLD SHORT":"Taxi"
+  };
+  const active = stageMap[p.phase] || "Scheduled Departure";
+  el.innerHTML = OPS_STAGES.map(s=>`<div class="timeline-item ${s===active?"active":""}">
+      <div class="t">${s}</div>
+      <div class="v">${s===active ? "ACTIVE" : "QUEUED"}</div>
+    </div>`).join("");
+}
+
+/** Queue lightweight AOCC notifications for recovery and reroute actions. */
+function pushOpsNotification(text, cls){
+  const box = document.getElementById("opsNotifs");
+  if(!box) return;
+  const n = document.createElement("div");
+  n.className = "notif " + (cls||"");
+  n.textContent = text;
+  box.appendChild(n);
+  setTimeout(()=>{ n.style.opacity="0"; n.style.transform="translateY(-6px)"; }, 2800);
+  setTimeout(()=>{ if(n.parentElement) n.parentElement.removeChild(n); }, 3400);
+}
+
+/** Handle click-to-select interaction on aircraft markers. */
+function pickAircraft(screenX, screenY){
+  let best = null;
+  let bestDist = 22;
+  for(const p of planes){
+    const sp = iso3d ? project(p.x, p.alt, p.y) : [p.x*W, p.y*H];
+    const d = Math.hypot(sp[0]-screenX, sp[1]-screenY);
+    if(d < bestDist){ bestDist = d; best = p; }
+  }
+  selectedAircraftId = best ? best.id : null;
+  renderFlightPanel();
+  renderOpsTimeline();
+}
 
 /* ---------- view switching ---------- */
 function setView(v){
@@ -679,6 +900,9 @@ function runwayA(){return {id:"A",s:[0.13,0.66],e:[0.93,0.20],labelStart:"33L",l
 function runwayB(){return {id:"B",s:[0.11,0.74],e:[0.91,0.28],labelStart:"33R",labelEnd:"15L"};}
 const GATE_Y=0.88,GATE_TOP=0.76,TAXI_Y=0.72,GATE_X0=0.05,GATE_DX=0.026,N_GATES=11;
 function gateX(i){return GATE_X0+(i%N_GATES)*GATE_DX;}
+AIRPORT_MODEL = buildAirportModel();
+initGateStates();
+initGroundVehicles();
 let planes=[]; let seq=0; const MAX_PLANES=70; let runwayLocks={};
 // Deterministic helpers (avoid random UI noise; use seq-based hashing)
 function seededFloat(seed){return (hash(String(seed)) % 1000) / 1000;}
@@ -705,8 +929,21 @@ function spawnPlane(tier,opts){
   const jx = (seededFloat(seq) - 0.5) * 0.012, jz = (seededFloat(seq + 1) - 0.5) * 0.008;
   planes.push({
     id: makeFlightId(seq), tier, partition: opts.partition || pick(HUBS, seq), path, runwayId: r.id, seg: 0, t: 0,
-    x: path.nodes[0][0] + jx, y: path.nodes[0][1] + jz, angle: 0, trail: [], done: false, phase: isOut ? "TAXI OUT" : "APPROACH", spawn: performance.now(),
-    alt: 0, pitch: 0, jx, jz, hold: false
+    x: path.nodes[0][0] + jx, y: path.nodes[0][1] + jz, angle: 0, trail: [], done: false, phase: isOut ? "GATE" : "APPROACH", spawn: performance.now(),
+    alt: 0, pitch: 0, jx, jz, hold: false,
+    gateId: `G${String((g%N_GATES)+1).padStart(2,"0")}`,
+    aircraftType: pick(["A320","B737","A321","B787","A220"], seq + 99),
+    destination: pick(HUBS, seq + 44),
+    delayMin: Math.max(0, Math.round(rnd(0, 10, seq + 77))),
+    crewStatus: pick(["Ready","Legal","Swap Pending","Rest-critical"], seq + 54),
+    dutyRemainingHrs: rnd(2.4, 11.5, seq + 19),
+    passengers: 90 + (hash(String(seq)+"pax") % 130),
+    delayReason: "On schedule",
+    recoveryTimeline: "Awaiting optimizer action",
+    routeCurrent: path.nodes.map(n=>[n[0],n[1]]),
+    routePrevious: null,
+    routeChangedAt: 0,
+    recoveryCompleteUntil: 0
   });
 }
 function lerp(a,b,t){return a+(b-a)*t;}
@@ -726,6 +963,8 @@ function updatePlane(p,dt){
     p.t = Math.min(p.t, 0.02);
     p.phase = "HOLD SHORT";
     p.hold = true;
+    p.delayMin = Math.min(60, (p.delayMin||0) + dt*2.5);
+    p.delayReason = "Runway queue";
     return;
   }
   // For inbound (landing) ensure aircraft wait before entering the runway segment (seg===1 is runway), not at its very start.
@@ -734,6 +973,8 @@ function updatePlane(p,dt){
     p.t = Math.min(p.t, 0.02);
     p.phase = p.hold?"GO-AROUND":"HOLD SHORT";
     p.hold = true;
+    p.delayMin = Math.min(60, (p.delayMin||0) + dt*2.2);
+    p.delayReason = "Landing spacing / runway occupancy";
     return;
   }
 
@@ -742,12 +983,12 @@ function updatePlane(p,dt){
     p.t -= 1;
     p.seg++;
     if(p.seg >= nodes.length-1){
-      p.phase = p.path.kind === "out" ? "AIRBORNE" : "PARKED";
+      p.phase = p.path.kind === "out" ? "AIRBORNE" : "DOCKED";
       if(p.path.kind === "in"){ p.done = true; releaseRunway(p); return; }
       if(p.path.kind === "out"){ p.seg = nodes.length-1; p.done = true; releaseRunway(p); return; }
     } else {
       p.phase = phaseFor(p, p.seg);
-      if(p.phase === "TAKEOFF ROLL" || p.phase === "LANDING"){ claimRunway(p); p.hold=false; }
+      if(p.phase === "TAKEOFF" || p.phase === "LANDING"){ claimRunway(p); p.hold=false; }
       if(p.phase === "ROLL-OUT" && p.path.kind === "in"){ releaseRunway(p); }
     }
   }
@@ -773,10 +1014,94 @@ function updatePlane(p,dt){
   if(isOut) p.alt = prog<0.6 ? 0 : Math.min(CRZ,(prog-0.6)/0.4*CRZ);
   else      p.alt = prog>0.4 ? 0 : Math.min(CRZ,(0.4-prog)/0.4*CRZ);
   p.pitch = isOut ? (p.alt>0.005?-0.32:0) : (p.alt>0.005?0.32:0);
+  if(!p.hold) p.delayMin = Math.max(0, (p.delayMin||0) - dt*0.4);
 }
 function phaseFor(p,seg){
-  if(p.path.kind==="out"){if(seg<=2)return "TAXI OUT";if(seg===3)return "TAKEOFF ROLL";return "CLIMB";}
-  if(seg===0)return p.hold?"HOLD OVER":"APPROACH";if(seg===1)return "LANDING";if(seg===2)return "ROLL-OUT";return "TAXI IN";
+  if(p.path.kind==="out"){
+    if(seg===0) return "PUSHBACK";
+    if(seg<=2) return "TAXI";
+    if(seg===3) return p.hold ? "HOLD SHORT" : "HOLD SHORT";
+    if(seg===4) return "TAKEOFF";
+    return "AIRBORNE";
+  }
+  if(seg===0)return p.hold?"HOLD OVER":"APPROACH";
+  if(seg===1)return "LANDING";
+  if(seg===2)return "ROLL-OUT";
+  if(seg<=4)return "TAXI";
+  return "DOCKED";
+}
+
+/** Compute gate occupancy and state from active aircraft movement/state. */
+function updateGateStates(){
+  for(const gate of AIRPORT_MODEL.gates){
+    gateStateById[gate.id] = {state:"available", flight:null};
+  }
+  for(const p of planes){
+    if(!p.gateId) continue;
+    const gs = gateStateById[p.gateId] || {state:"available", flight:null};
+    if(p.phase === "PARKED"){ gs.state = p.delayMin > 8 ? "delayed" : "boarding"; gs.flight = p.id; }
+    else if(p.phase.includes("TAXI") || p.phase === "HOLD SHORT"){ gs.state = "occupied"; gs.flight = p.id; }
+    else if(p.phase === "APPROACH"){ gs.state = "available"; }
+    if(p.crewStatus === "Rest-critical"){ gs.state = "maintenance"; }
+    gateStateById[p.gateId] = gs;
+  }
+}
+
+/** Apply route update with old/new path fade to visualize optimizer reroutes. */
+function applyTaxiReroute(p, reasonText){
+  if(!p || !p.path || p.path.nodes.length < 4) return;
+  const now = performance.now();
+  const currentNodes = p.path.nodes.map(n=>[n[0],n[1]]);
+  const pivot = [0.12 + (hash(p.id+"rv")%8)/100, 0.66 + (hash(p.id+"rz")%6)/100];
+  const rewritten = currentNodes.slice();
+  if(p.path.kind === "out"){
+    if(rewritten[3]) rewritten[3] = pivot;
+  }else{
+    if(rewritten[3]) rewritten[3] = [pivot[0] + 0.04, pivot[1] - 0.06];
+  }
+  p.routePrevious = p.routeCurrent ? p.routeCurrent.map(n=>[n[0],n[1]]) : currentNodes;
+  p.routeCurrent = rewritten.map(n=>[n[0],n[1]]);
+  p.path.nodes = rewritten;
+  p.routeChangedAt = now;
+  p.delayMin = Math.min(45, (p.delayMin||0) + 3);
+  p.delayReason = reasonText || "Taxi reroute due to congestion";
+  p.recoveryTimeline = "New taxi route generated";
+}
+
+/** Draw glowing intended taxi route with old route fade when rerouted. */
+function drawTaxiRoute3D(p){
+  if(!p.routeCurrent || p.routeCurrent.length < 2) return;
+  const now = performance.now();
+  const progressPulse = 0.35 + 0.2*Math.sin(now*0.006);
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(172,237,255,${0.45 + progressPulse})`;
+  ctx.shadowColor = "rgba(172,237,255,0.55)";
+  ctx.shadowBlur = 8;
+  ctx.beginPath();
+  p.routeCurrent.forEach((n,i)=>{
+    const pp = project(n[0], 0.004, n[1]);
+    if(i===0) ctx.moveTo(pp[0],pp[1]); else ctx.lineTo(pp[0],pp[1]);
+  });
+  ctx.stroke();
+  ctx.restore();
+  if(p.routePrevious && p.routeChangedAt){
+    const age = Math.max(0, 1 - ((now - p.routeChangedAt)/3500));
+    if(age > 0){
+      ctx.save();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = `rgba(255,159,107,${age*0.55})`;
+      ctx.setLineDash([7,7]);
+      ctx.beginPath();
+      p.routePrevious.forEach((n,i)=>{
+        const pp = project(n[0], 0.004, n[1]);
+        if(i===0) ctx.moveTo(pp[0],pp[1]); else ctx.lineTo(pp[0],pp[1]);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
 }
 function drawGrid(){
   ctx.save();
@@ -854,9 +1179,13 @@ function drawTerminal(time){ctx.save();const tx=GATE_X0*W-18,tw=(N_GATES*GATE_DX
   ctx.fillStyle="rgba(74,225,118,0.22)"; ctx.fillRect(tx+18,ty+th-18,tw-36,4);
   ctx.strokeStyle="rgba(255,240,180,0.45)"; ctx.lineWidth=1.2;
   for(let i=0;i<N_GATES;i++){const gx=gateX(i)*W;
+    const gateId=`G${String((i%N_GATES)+1).padStart(2,"0")}`;
+    const gs=gateStateById[gateId]||{state:"available"};
+    const gateColor=GATE_STATE_COLORS[gs.state]||GATE_STATE_COLORS.available;
     ctx.beginPath(); ctx.moveTo(gx,ty+2); ctx.lineTo(gx,ty+th-2); ctx.stroke();
     ctx.fillStyle="rgba(172,237,255,0.22)"; ctx.fillRect(gx-6,GATE_Y*H+4,12,6);
     ctx.fillStyle="rgba(255,240,180,0.65)"; ctx.fillRect(gx-2,GATE_Y*H+1,4,10);
+    ctx.fillStyle=gateColor; ctx.fillRect(gx-5,GATE_Y*H-2,10,2.8);
     ctx.fillStyle="rgba(225,237,240,0.78)"; ctx.font="9px 'Segoe UI', sans-serif"; ctx.fillText(String(i+1).padStart(2,'0'), gx-7, ty+th+13);
   }ctx.restore();}
 function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
@@ -870,6 +1199,7 @@ function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,
 const ISO_COS = Math.sqrt(3) / 2; // cos(30°) ≈ 0.866
 const ISO_SIN = 0.5;              // sin(30°)
 const CAM = { scale: 460, ox: 0.50, oz: 0.52, yaw: 0.55 }; // yaw ~31° for classic diamond framing
+let panPx = 0, panPy = 0;
 function project(wx, wy, wz){
   // center, then yaw so runways read as isometric diagonals (not flat horizontals)
   let x = wx - CAM.ox, z = wz - CAM.oz;
@@ -877,7 +1207,7 @@ function project(wx, wy, wz){
   const rx = x*cy - z*syaw, rz = x*syaw + z*cy;
   const sx = (rx - rz) * ISO_COS;
   const sy = (rx + rz) * ISO_SIN - wy * 1.35;
-  return [W * 0.50 + sx * CAM.scale * zoom, H * 0.36 + sy * CAM.scale * zoom];
+  return [W * 0.50 + sx * CAM.scale * zoom + panPx, H * 0.36 + sy * CAM.scale * zoom + panPy];
 }
 function depthKey(wx, wy, wz){ return (wx - CAM.ox) + (wz - CAM.oz) - wy * 2; }
 function drawGrid3D(){
@@ -999,6 +1329,167 @@ function drawTerminal3D(){
   }
   ctx.restore();
 }
+/** Draw AOCC airport infrastructure layers in a blueprint-style isometric map. */
+function drawAirportInfrastructure3D(time){
+  // Aprons (main, cargo, maintenance)
+  for(const apron of AIRPORT_MODEL.aprons){
+    const fill = apron.kind==="cargo" ? "rgba(38,52,76,0.86)" : apron.kind==="maintenance" ? "rgba(42,50,64,0.86)" : "rgba(26,44,66,0.88)";
+    drawBox3D(apron.x0,apron.z0,apron.x1,apron.z1,0.002,fill,"rgba(120,165,214,0.36)");
+  }
+  // Terminal and ATC tower
+  drawTerminal3D();
+  drawBox3D(AIRPORT_MODEL.tower.x0,AIRPORT_MODEL.tower.z0,AIRPORT_MODEL.tower.x1,AIRPORT_MODEL.tower.z1,AIRPORT_MODEL.tower.h,"rgba(28,54,78,0.96)","rgba(172,237,255,0.55)");
+  // Fuel farm tanks
+  const ff = AIRPORT_MODEL.fuelFarm;
+  drawBox3D(ff.x0,ff.z0,ff.x1,ff.z1,0.018,"rgba(36,52,72,0.86)","rgba(172,237,255,0.35)");
+  for(let i=0;i<3;i++){
+    const px = ff.x0 + 0.024 + i*0.03;
+    const p = project(px, 0.022, ff.z0+0.035);
+    ctx.save();
+    ctx.fillStyle="rgba(172,237,255,0.18)";
+    ctx.beginPath(); ctx.arc(p[0],p[1],4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  // Taxiways
+  ctx.save();
+  AIRPORT_MODEL.serviceRoads.forEach(line=>{
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "rgba(140,150,170,0.45)";
+    ctx.setLineDash([4,5]);
+    ctx.beginPath();
+    line.forEach((n,i)=>{ const p = project(n[0],0.002,n[1]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  AIRPORT_MODEL.taxiways.forEach((line, idx)=>{
+    ctx.lineWidth = idx===0 ? 3.6 : 2.5;
+    ctx.strokeStyle = "rgba(173,209,242,0.65)";
+    ctx.beginPath();
+    line.forEach((n,i)=>{ const p = project(n[0],0.003,n[1]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+    ctx.stroke();
+    ctx.setLineDash([8,9]);
+    ctx.strokeStyle = "rgba(255,240,180,0.7)";
+    ctx.beginPath();
+    line.forEach((n,i)=>{ const p = project(n[0],0.004,n[1]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+  // Holding points
+  AIRPORT_MODEL.holdingPoints.forEach(h=>{
+    const p = project(h.x,0.004,h.z);
+    ctx.strokeStyle="rgba(255,240,180,0.95)";
+    ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(p[0]-7,p[1]-4); ctx.lineTo(p[0]+7,p[1]-4); ctx.stroke();
+  });
+  ctx.restore();
+  // Gate state nodes + jet bridges
+  for(const gate of AIRPORT_MODEL.gates){
+    const gs = gateStateById[gate.id] || {state:"available"};
+    const color = GATE_STATE_COLORS[gs.state] || GATE_STATE_COLORS.available;
+    const g0 = project(gate.x,0.008,gate.z);
+    const g1 = project(gate.jetBridgeTo[0],0.008,gate.jetBridgeTo[1]);
+    ctx.save();
+    ctx.strokeStyle="rgba(172,237,255,0.35)";
+    ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.moveTo(g0[0],g0[1]); ctx.lineTo(g1[0],g1[1]); ctx.stroke();
+    ctx.fillStyle=color;
+    ctx.shadowBlur=8; ctx.shadowColor=color;
+    ctx.beginPath(); ctx.arc(g0[0],g0[1],3.1,0,Math.PI*2); ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.restore();
+  }
+  // ATC and area labels
+  const labels = [
+    {name:"MAIN TERMINAL",x:0.16,z:0.94},
+    {name:"CARGO APRON",x:0.84,z:0.84},
+    {name:"MAINTENANCE",x:0.84,z:0.70},
+    {name:"ATC",x:0.44,z:0.90},
+    {name:"FUEL FARM",x:0.85,z:0.58}
+  ];
+  ctx.save();
+  ctx.font="9px 'JetBrains Mono', monospace";
+  ctx.fillStyle="rgba(172,237,255,0.72)";
+  labels.forEach(l=>{ const p=project(l.x,0.018,l.z); ctx.fillText(l.name,p[0],p[1]); });
+  ctx.restore();
+  // Heatmap overlays
+  drawOpsHeatmap3D(time);
+}
+
+/** Draw operational heatmaps with per-layer toggles. */
+function drawOpsHeatmap3D(time){
+  const pulse = 0.4 + 0.2*Math.sin(time*0.0025);
+  if(heatLayerState.taxi){
+    ctx.save();
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = `rgba(172,237,255,${0.06 + pulse*0.08})`;
+    for(const line of AIRPORT_MODEL.taxiways){
+      ctx.beginPath();
+      line.forEach((n,i)=>{ const p=project(n[0],0.001,n[1]); if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  if(heatLayerState.gate){
+    ctx.save();
+    for(const gate of AIRPORT_MODEL.gates){
+      const gs = gateStateById[gate.id] || {state:"available"};
+      const strength = gs.state==="delayed" ? 0.30 : gs.state==="boarding" ? 0.22 : 0.12;
+      const p = project(gate.x,0.002,gate.z);
+      ctx.fillStyle = `rgba(172,237,255,${strength})`;
+      if(gs.state==="delayed") ctx.fillStyle = `rgba(255,159,107,${strength+0.08})`;
+      ctx.beginPath(); ctx.arc(p[0],p[1],10,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  if(heatLayerState.runway){
+    [runwayA(), runwayB()].forEach(r=>{
+      const occ = !!runwayLocks[r.id];
+      const a = project(r.s[0],0.002,r.s[1]), b = project(r.e[0],0.002,r.e[1]);
+      ctx.save();
+      ctx.lineWidth = occ ? 9 : 7;
+      ctx.strokeStyle = occ ? "rgba(255,82,82,0.18)" : "rgba(74,225,118,0.10)";
+      ctx.beginPath(); ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); ctx.stroke();
+      ctx.restore();
+    });
+  }
+  if(heatLayerState.ground){
+    ctx.save();
+    for(const v of groundVehicles){
+      const p = project(v.x,0.004,v.z);
+      ctx.fillStyle="rgba(255,219,215,0.25)";
+      ctx.beginPath(); ctx.arc(p[0],p[1],11,0,Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  if(heatLayerState.recovery){
+    ctx.save();
+    const now = performance.now();
+    for(let i=recoveryHighlights.length-1;i>=0;i--){
+      const h = recoveryHighlights[i];
+      const age = 1 - ((now - h.ts)/3000);
+      if(age <= 0){ recoveryHighlights.splice(i,1); continue; }
+      const p = project(h.x,0.012,h.z);
+      ctx.strokeStyle = `rgba(74,225,118,${age*0.7})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p[0],p[1],10 + (1-age)*14,0,Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+/** Draw ground service vehicles (fuel, bags, catering, maintenance). */
+function drawGroundVehicles3D(){
+  for(const v of groundVehicles){
+    const p = project(v.x,0.005,v.z);
+    ctx.save();
+    ctx.fillStyle = v.color;
+    ctx.shadowColor = v.color;
+    ctx.shadowBlur = 7;
+    ctx.fillRect(p[0]-3,p[1]-2,6,4);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+}
 /* Aircraft as a 3D wireframe (fuselage spine, swept wings, tail, fin). */
 const AC_V=[
   [0.055,0.004,0],[0.025,0.006,0],[0,0.004,0],[-0.035,0.002,0],[-0.055,0,0],
@@ -1019,7 +1510,10 @@ function P3(p, vx, vy, vz){
   return project(p.x + yx, p.alt + py, p.y + yz);
 }
 function drawPlane3D(p){
-  const col=TIER_COLORS[p.tier];
+  const statusKey = statusForPlane(p);
+  const col=(AIRCRAFT_STATUSES[statusKey]||AIRCRAFT_STATUSES.normal).color;
+  const emph = selectedAircraftId===p.id || p.hold || statusKey==="delayed" || statusKey==="conflict";
+  if(emph) drawTaxiRoute3D(p);
   // ground shadow + altitude stem
   if(p.alt>0.004){
     ctx.save();
@@ -1060,12 +1554,13 @@ function drawPlane3D(p){
   ctx.restore();
   const lc=project(p.x, p.alt+0.02, p.y);
   // declutter: only label airborne / rolling aircraft, skip dense taxi pile-ups
-  const showLabel = p.alt>0.004 || p.phase==="TAKEOFF ROLL" || p.phase==="LANDING" || p.phase==="ROLL-OUT" || p.phase==="APPROACH";
+  const showLabel = emph || p.alt>0.004 || p.phase==="TAKEOFF" || p.phase==="LANDING" || p.phase==="ROLL-OUT" || p.phase==="APPROACH";
   if(showLabel){
+    const label = `${p.id} ${p.aircraftType||"A320"} ${p.gateId||"--"}>${p.destination||"--"} D+${Math.round(p.delayMin||0)} ${p.crewStatus||"Ready"}`;
     ctx.save(); ctx.font="9px monospace";
-    const label=p.id, tw=ctx.measureText(label).width;
-    ctx.fillStyle="rgba(2,6,12,0.65)"; ctx.fillRect(lc[0]+5, lc[1]-18, tw+6, 12);
-    ctx.fillStyle="rgba(225,237,240,0.95)"; ctx.fillText(label, lc[0]+8, lc[1]-9);
+    const tw=ctx.measureText(label).width;
+    ctx.fillStyle="rgba(2,6,12,0.72)"; ctx.fillRect(lc[0]+5, lc[1]-18, tw+8, 12);
+    ctx.fillStyle=col; ctx.fillText(label, lc[0]+8, lc[1]-9);
     ctx.restore();
   }
 }
@@ -1095,11 +1590,12 @@ function drawGround3D(time){
   ctx.restore();
 
   if(layersOn){drawGrid3D();drawRadar3D(time);}
+  drawAirportInfrastructure3D(time);
   drawRunway3D(runwayA(),time);
   drawRunway3D(runwayB(),time);
-  drawTerminal3D();
+  drawGroundVehicles3D();
 }
-function drawPlane(p){const col=TIER_COLORS[p.tier];
+function drawPlane(p){const col=(AIRCRAFT_STATUSES[statusForPlane(p)]||AIRCRAFT_STATUSES.normal).color;
   if(p.trail.length>1){ctx.save();ctx.lineWidth=2;ctx.lineCap="round";
     for(let i=1;i<p.trail.length;i++){const a=i/p.trail.length;ctx.strokeStyle=col;ctx.globalAlpha=a*0.45;
       ctx.beginPath();ctx.moveTo(p.trail[i-1][0]*W,p.trail[i-1][1]*H);ctx.lineTo(p.trail[i][0]*W,p.trail[i][1]*H);ctx.stroke();}ctx.restore();}
@@ -1113,7 +1609,8 @@ function drawPlane(p){const col=TIER_COLORS[p.tier];
   ctx.fillStyle="rgba(255,255,255,0.85)"; ctx.beginPath(); ctx.arc(s*1.35,0,1.35,0,Math.PI*2); ctx.fill();
   ctx.strokeStyle="rgba(2,6,12,0.55)"; ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(s*1.35,0,1.35,0,Math.PI*2); ctx.stroke();
   ctx.shadowBlur=0;ctx.restore();
-  ctx.save();ctx.fillStyle="rgba(225,237,240,0.88)";ctx.font="9px monospace";ctx.fillText(p.id,x+9,y-7);ctx.restore();}
+  const label=`${p.id} ${p.aircraftType||"A320"} ${p.gateId||"--"}>${p.destination||"--"} D+${Math.round(p.delayMin||0)} ${p.crewStatus||"Ready"}`;
+  ctx.save();ctx.fillStyle="rgba(225,237,240,0.88)";ctx.font="9px monospace";ctx.fillText(label,x+9,y-7);ctx.restore();}
 let lastT=performance.now(),ambient=0;
 // enable isometric 3D view by default for clearer runway/gate geometry
 let zoom=0.95, iso3d=true, layersOn=true;
@@ -1122,11 +1619,13 @@ function frame(now){const dt=Math.min((now-lastT)/1000,0.05);lastT=now;
     ctx.clearRect(0,0,W,H);
     ctx.save();
     try{
+      updateGroundVehicles(dt);
       if(iso3d){
         // true 3D isometric scene — every element projected from world space
         drawGround3D(now);
         ambient+=dt; if(ambient>1.1&&planes.length<14){ambient=0;spawnPlane(pick([1,1,1,2,3]));}
         for(const p of planes)updatePlane(p,dt);
+        updateGateStates();
         const sorted=planes.slice().sort((a,b)=>depthKey(a.x,a.alt,a.y)-depthKey(b.x,b.alt,b.y));
         for(const p of sorted)drawPlane3D(p);
       } else {
@@ -1135,9 +1634,12 @@ function frame(now){const dt=Math.min((now-lastT)/1000,0.05);lastT=now;
         drawRunway(runwayA(),now);drawRunway(runwayB(),now);drawTerminal(now);
         ambient+=dt; if(ambient>1.1&&planes.length<14){ambient=0;spawnPlane(pick([1,1,1,2,3]));}
         for(const p of planes)updatePlane(p,dt); for(const p of planes)drawPlane(p);
+        updateGateStates();
       }
     }catch(err){console.error("render error",err);}
     planes=planes.filter(p=>!p.done);
+    renderFlightPanel();
+    renderOpsTimeline();
     ctx.restore();
   }
   requestAnimationFrame(frame);
@@ -1174,14 +1676,23 @@ function renderOps(m){
   // active flights
   const fl=document.getElementById("opsFlights");
   fl.innerHTML = planes.length? planes.slice(-8).reverse().map(p=>{
+    const statusKey = statusForPlane(p);
+    const statusMeta = AIRCRAFT_STATUSES[statusKey] || AIRCRAFT_STATUSES.normal;
     const status = p.hold ? `${p.phase} (${p.runwayId})` : `${p.phase}`;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-family:'JetBrains Mono';font-size:11px">
-      <span class="dot" style="background:${TIER_COLORS[p.tier]};box-shadow:0 0 6px ${TIER_COLORS[p.tier]}"></span>
+    return `<div data-flight="${p.id}" style="display:flex;align-items:center;gap:8px;padding:3px 0;font-family:'JetBrains Mono';font-size:11px;cursor:pointer">
+      <span class="dot" style="background:${statusMeta.color};box-shadow:0 0 6px ${statusMeta.color}"></span>
       <span style="width:54px;font-weight:700">${p.id}</span>
       <span style="flex:1;color:var(--on-surface-variant)">${status}</span>
-      <span style="color:var(--primary);font-size:10px">${p.partition}</span></div>`;
+      <span style="color:var(--primary);font-size:10px">${p.gateId||"--"} ${p.destination||p.partition}</span></div>`;
   }).join("")
     : '<div class="empty">No active flights.</div>';
+  fl.querySelectorAll("[data-flight]").forEach(row=>{
+    row.addEventListener("click",()=>{
+      selectedAircraftId = row.getAttribute("data-flight");
+      renderFlightPanel();
+      renderOpsTimeline();
+    });
+  });
 }
 
 function renderTerm(el,events,cap){
@@ -1212,6 +1723,50 @@ function pushLocalEvent(kind, detail, partition){
   renderEventStreams(lastEvents);
   if(document.getElementById("view-review").classList.contains("active")){
     renderReview(getLastMetrics(),lastEvents);
+  }
+}
+
+/** Process new backend events into AOCC recovery highlights, route updates, and operator notifications. */
+function processOpsEvents(events){
+  if(!events || !events.length) return;
+  if(processedEventCount > events.length) processedEventCount = 0;
+  const fresh = events.slice(processedEventCount);
+  processedEventCount = events.length;
+  for(const e of fresh){
+    if(!planes.length) continue;
+    const idx = hash((e.partition||"GLOBAL") + (e.kind||"evt")) % planes.length;
+    const p = planes[idx];
+    if(!p) continue;
+    if(e.kind==="xpartition" || e.kind==="review_escalate"){
+      applyTaxiReroute(p, "Optimizer reroute from network rebalance");
+      recoveryHighlights.push({x:p.x,z:p.y,ts:performance.now()});
+      pushOpsNotification(`${p.id} new taxi route generated`, "warn");
+    } else if(e.kind==="review_approve" || e.kind==="review_reject"){
+      p.recoveryCompleteUntil = performance.now() + 4200;
+      p.crewStatus = "Reassigned";
+      p.recoveryTimeline = "Crew reassigned · Recovery complete";
+      recoveryHighlights.push({x:p.x,z:p.y,ts:performance.now()});
+      pushOpsNotification(`${p.id} crew reassigned`, "ok");
+    } else if(e.kind==="sla_breach"){
+      p.delayMin = Math.min(60, (p.delayMin||0) + 12);
+      p.delayReason = "Departure delayed +12 min";
+      p.recoveryTimeline = "Delay mitigation in progress";
+      pushOpsNotification(`${p.id} departure delayed +12 min`, "warn");
+    }
+  }
+
+  /** Feed adapter hook for future ADS-B/OpenSky integration without renderer changes. */
+  function ingestExternalAircraftFeed(feed){
+    if(!Array.isArray(feed)) return;
+    const byId = new Map(planes.map(p=>[p.id,p]));
+    for(const item of feed){
+      if(!item || !item.id) continue;
+      const p = byId.get(item.id);
+      if(!p) continue;
+      if(typeof item.x === "number" && typeof item.y === "number"){ p.x = item.x; p.y = item.y; }
+      if(typeof item.alt === "number") p.alt = item.alt;
+      if(item.status) p.phase = item.status;
+    }
   }
 }
 
@@ -1517,6 +2072,7 @@ function poll(){
     if(sig!==JSON.stringify(lastEvents)){
       lastEvents=events;
       renderEventStreams(events);
+      processOpsEvents(events);
       if(document.getElementById("view-review").classList.contains("active"))renderReview(getLastMetrics(),events);
     }
   }).catch(()=>{});
@@ -1531,11 +2087,42 @@ bindSlider("rDisrupt","sDisrupt");bindSlider("rWeather","sWeather");bindSlider("
 /* ---------- ops map controls (zoom / 3D / layers) ---------- */
 const zoomIn=document.getElementById("zoomIn"),zoomOut=document.getElementById("zoomOut");
 const btn3d=document.getElementById("btn3d"),btnLayers=document.getElementById("btnLayers");
+const btnResetView=document.getElementById("btnResetView"),btnFit=document.getElementById("btnFit");
+const layerTaxi=document.getElementById("layerTaxi"),layerGate=document.getElementById("layerGate"),layerRunway=document.getElementById("layerRunway"),layerGround=document.getElementById("layerGround"),layerRecovery=document.getElementById("layerRecovery");
 const airportCanvas=document.getElementById("airport");
 zoomIn.addEventListener("click",()=>{zoom=Math.min(3,zoom*1.25);});
 zoomOut.addEventListener("click",()=>{zoom=Math.max(0.5,zoom/1.25);});
 btn3d.addEventListener("click",()=>{iso3d=!iso3d;btn3d.classList.toggle("on",iso3d);airportCanvas.classList.toggle("iso",iso3d);});
 btnLayers.addEventListener("click",()=>{layersOn=!layersOn;btnLayers.classList.toggle("on",layersOn);});
+btnResetView.addEventListener("click",()=>{zoom=0.95; panPx=0; panPy=0; CAM.yaw=0.55;});
+btnFit.addEventListener("click",()=>{zoom=0.9; panPx=0; panPy=0;});
+function bindLayerToggle(el,key){
+  if(!el) return;
+  el.addEventListener("click",()=>{heatLayerState[key]=!heatLayerState[key];el.classList.toggle("on",heatLayerState[key]);});
+}
+bindLayerToggle(layerTaxi,"taxi");
+bindLayerToggle(layerGate,"gate");
+bindLayerToggle(layerRunway,"runway");
+bindLayerToggle(layerGround,"ground");
+bindLayerToggle(layerRecovery,"recovery");
+airportCanvas.addEventListener("click",(ev)=>{
+  const rect = airportCanvas.getBoundingClientRect();
+  pickAircraft(ev.clientX - rect.left, ev.clientY - rect.top);
+});
+let dragging=false,lastMX=0,lastMY=0;
+airportCanvas.addEventListener("pointerdown",(ev)=>{dragging=true;lastMX=ev.clientX;lastMY=ev.clientY;airportCanvas.setPointerCapture(ev.pointerId);});
+airportCanvas.addEventListener("pointermove",(ev)=>{
+  if(!dragging) return;
+  const dx = ev.clientX-lastMX, dy = ev.clientY-lastMY;
+  lastMX=ev.clientX; lastMY=ev.clientY;
+  panPx += dx;
+  panPy += dy;
+});
+airportCanvas.addEventListener("pointerup",()=>{dragging=false;});
+airportCanvas.addEventListener("wheel",(ev)=>{
+  ev.preventDefault();
+  zoom = Math.max(0.45, Math.min(3.2, zoom * (ev.deltaY > 0 ? 0.93 : 1.07)));
+},{passive:false});
 const rulesValidate=document.getElementById("rulesValidate");
 const rulesDeploy=document.getElementById("rulesDeploy");
 const rulesExec=document.getElementById("rulesExec");
