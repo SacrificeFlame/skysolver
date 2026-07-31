@@ -1,19 +1,22 @@
-# Design QA — Guided Recovery Workspace
+# Design QA — Airline Recovery Workspace
 
-Reference: combined Option 1 + Option 3 mockup (`exec-496e2960-59e0-407f-8596-ef7cf5bc0f39.png`)
+Visual target: the selected combined Option 1 + Option 3 airline OCC direction, expanded into the approved multi-workspace information architecture.
 
-Viewport tested: 1440 × 900
+Viewport tested: 1440 × 900.
 
 ## Results
 
 - P0: none.
 - P1: none.
-- P2: none after correcting nested route-icon sizing.
-- P3: the center workspace intentionally scrolls internally on shorter workstations so the overall OCC canvas never page-scrolls.
-- Information hierarchy matches the selected direction: incident → affected flights → selected-flight airport context → before/after recovery → planned destination route → legality → one primary action.
-- The selected flight route updates for DEN, BOS, MCO, SEA, SFO, and ATL.
-- The recovery action was exercised against the backend and successfully transitioned from “Generate recovery plan” to “Approve hold at gate.”
+- P2: none.
+- P3: some secondary tables intentionally scroll inside their workspace at lower-height desktop resolutions.
+- The global application shell, active disruption, data freshness, solver health, worker capacity, operator identity, and synthetic-data state remain visible across routes.
+- Dedicated routes verified for Overview, Disruptions, Crew Recovery, Flights, Aircraft, Planned Routes, Solver Tiers, Tier 1, Tier 2, Tier 3, Decisions, Deployment, and Audit.
+- Planned Routes shows scheduled and proposed routes, weather conflict, origin/destination, route duration, crew movement chain, and movement feasibility checks.
+- Crew Recovery exposes the original and proposed assignment, duty legality, physical movement, passenger impact, residual risk, ruleset, and state version.
+- The recovery workflow was exercised through solve → approve → independent validation → deployment handoff.
 - Browser console errors: none.
-- Document height equals viewport height at 1440 × 900.
+- Overview document height equals viewport height at 1440 × 900.
+- Product-level synthetic values are explicitly labelled and existing backend legality/deployment responses remain authoritative.
 
 final result: passed
