@@ -90,3 +90,23 @@ def test_recovery_request_is_audited_and_accepted():
     status, _, body = _request("/api/v1/recovery/run", method="POST", body=payload)
     assert status == 202
     assert json.loads(body)["partition_id"] == "DEN"
+
+
+def test_india_planned_routes_are_api_backed_and_distinct():
+    status, ctype, body = _request("/api/v1/routes")
+    data = json.loads(body)
+    assert status == 200 and ctype == "application/json"
+    assert data["data_mode"] == "synthetic-demo"
+    assert len(data["items"]) == 5
+    assert {item["flight_id"] for item in data["items"]} == {"AI421", "6E203", "UK945", "AI807", "6E531"}
+    assert len({(item["origin"]["code"], item["destination"]["code"]) for item in data["items"]}) == 5
+
+
+def test_individual_planned_route_contains_movement_and_india_airports():
+    status, _, body = _request("/api/v1/routes/AI421")
+    route = json.loads(body)
+    assert status == 200
+    assert route["origin"]["code"] == "DEL"
+    assert route["destination"]["code"] == "BOM"
+    assert route["movement_segments"]
+    assert route["distance_km"] > 1000
