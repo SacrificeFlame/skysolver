@@ -5,3 +5,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+deployment/frontend/node_modules/
+*.tsbuildinfo
+deployment/frontend/vite.config.js
+deployment/frontend/vite.config.d.ts
