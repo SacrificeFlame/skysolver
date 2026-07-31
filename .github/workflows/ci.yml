@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Compile Python sources
+        run: python -m compileall -q core data deployment passengers predictive rules solvers state chaos
+      - name: Run test suite
+        run: python -m pytest -q
+      - name: Smoke-test Tier 1 worker
+        run: python -m deployment.worker --partition DEN --tier 1 --time-budget 0.2
+      - name: Smoke-test Tier 2 upgrade path
+        run: python -m deployment.worker --partition DEN --tier 2 --time-budget 0.2
