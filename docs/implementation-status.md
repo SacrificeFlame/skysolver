@@ -17,7 +17,7 @@ authority. The UI, API and release gates must continue to say this plainly.
 | Truthful OCC UI | Persistent synthetic banner, India routes, dedicated Tier pages, Tier 3 queue, Data Health and Deployment gates | No carrier feed |
 | API safety | FastAPI/OpenAPI, signed demo sessions, OIDC claim verifier, RBAC, MFA step-up, optimistic versions, idempotency and correlation | Airline IdP not configured |
 | Canonical state | Versioned/provenanced airline records and temporal context | Vendor mappings remain adapter-specific |
-| Ingestion | Contract validation, minimization, duplicate/out-of-order handling, cursor, DLQ and reconciliation | No carrier endpoint credentials |
+| Ingestion and adapters | Contract negotiation/validation, minimization, duplicate/out-of-order handling, cursor, DLQ, reconciliation, circuit breaking, PII-safe telemetry and signed write-command interlock | Canonical SDK only; no vendor implementation or carrier credentials |
 | Data health | Freshness, DLQ, drift, circuit and authority interlocks | Fixture intentionally blocks deployment |
 | Tier 1 | Legal-first regional incumbent and explicit partial coverage | Demo DGCA profile only |
 | Tier 2 | Restricted-master binary MILP, legal columns, warm start, solver availability and upgrade rejection | Not branch-and-price; no certified gap claim |
