@@ -27,6 +27,7 @@ from deployment.runtime_config import UnsafeRuntimeConfiguration, load_runtime_c
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from integrations.health import demo_registry
 from deployment.oidc import OidcTokenError, configured_verifier
+from deployment.production_composition import IncompleteProductionComposition, RuntimeDependencyRegistry
 
 
 class LoginRequest(BaseModel):
@@ -119,12 +120,20 @@ def require_permission(permission: Permission, step_up: bool=False):
     return dependency
 
 
-def create_app(recovery_store=recovery_store, data_health_registry=None) -> FastAPI:
+def create_app(recovery_store=recovery_store, data_health_registry=None,
+               runtime_health: RuntimeDependencyRegistry | None = None) -> FastAPI:
     runtime = load_runtime_configuration()
     if runtime.is_production_shaped and not getattr(recovery_store, "durable_authoritative", False):
         raise UnsafeRuntimeConfiguration(
             "Production-shaped API refuses the local demo store; inject the Aurora/MSK durable workflow composition"
         )
+    if runtime.is_production_shaped:
+        if runtime_health is None:
+            raise UnsafeRuntimeConfiguration("Production-shaped API requires an authoritative dependency registry")
+        try:
+            runtime_health.assert_configured()
+        except IncompleteProductionComposition as exc:
+            raise UnsafeRuntimeConfiguration(f"Production dependency composition is incomplete: {exc}") from exc
     app = FastAPI(
         title="SkySolver Recovery API",
         version="1.0.0-demo",
@@ -163,7 +172,14 @@ def create_app(recovery_store=recovery_store, data_health_registry=None) -> Fast
 
     @app.get("/api/v1/health/ready", include_in_schema=False)
     def ready():
-        return {"status": "ready_for_demo", "authoritative": False, "carrier_writes_enabled": False, "dependencies": {"state": "local-json-demo", "events": "local-demo", "carrier_adapters": "not_configured"}}
+        if runtime.is_production_shaped:
+            health=runtime_health.snapshot()
+            content={**health,"status":"ready" if health["ready"] else "not_ready",
+                     "carrier_writes_enabled":runtime.carrier_writes_enabled,
+                     "runtime_mode":runtime.mode.value}
+            return JSONResponse(content,status_code=200 if health["ready"] else 503)
+        return {"status": "ready_for_demo", "authoritative": False, "carrier_writes_enabled": False,
+                "dependencies": {"state": "local-json-demo", "events": "local-demo", "carrier_adapters": "not_configured"}}
 
     @app.get("/api/v1/metrics", include_in_schema=False)
     def metrics(_: Principal = Depends(principal)):

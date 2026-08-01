@@ -28,7 +28,7 @@ authority. The UI, API and release gates must continue to say this plainly.
 | Cross-partition recovery | Reservation/validation/commit/dual-ACK/compensation saga | No live station capacity systems |
 | Deployment | Resource commands, restart-safe Aurora claims, per-target idempotency, ACK/NACK/timeout, required-resource completion calculation, partial state, retry and compensation distinctions | Carrier vendor implementations and writes disabled |
 | Immutable evidence | KMS-encrypted S3 versioned COMPLIANCE Object Lock writer and integrity verification | AWS bucket not provisioned here |
-| AWS platform | EKS, Aurora, MSK, Redis, S3, KMS, ECR, Cognito/SAML, ALB/WAF/DNS, backups, Prometheus | Terraform not applied to an AWS account |
+| AWS platform | EKS, Aurora, MSK, Redis, S3, KMS, ECR, Cognito/SAML, ALB/WAF/DNS, backups and Prometheus; production startup requires authoritative dependency probes and readiness fails on Aurora/MSK/validation/artifact/adapter outage | Terraform not applied and no live AWS dependency evidence exists |
 | Release governance | Signed evidence gate for shadow/controlled production | Required evidence has not been supplied |
 | Replay | Evidence gate rejects toy volume, simulated passenger work and missing resilience dimensions | No certified 50,100-flight distributed run |
 
