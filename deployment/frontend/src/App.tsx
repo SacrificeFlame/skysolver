@@ -1,6 +1,6 @@
 import{useEffect,useMemo,useState}from'react';
 import{Activity,AlertTriangle,ArrowRight,Check,CloudLightning,Database,GitBranch,History,Map,Plane,ShieldCheck,Users,Wrench,X}from'lucide-react';
-import{api}from'./api';
+import{api,ApiError}from'./api';
 import type{Audit,Disruption,Flight,Recovery}from'./types';
 import RouteWorkspace from'./RouteWorkspace';
 import SolverWorkspace from'./SolverWorkspace';
@@ -32,12 +32,25 @@ function Decisions({recovery,run,choose}:{recovery:Recovery|null;run:()=>void;ch
 function Deployment({recovery}:{recovery:Recovery|null}){return <><PageHead eyebrow="DEPLOYMENT SIMULATION" title="Carrier publishing disabled" detail="No crew, aircraft, gate or passenger command will be sent from this environment."/><section className="card deploy-summary"><header><div><Badge tone="warning">SHADOW GATE NOT APPROVED</Badge><h2>{recovery?.selected_candidate_id||'No selected candidate'}</h2></div><strong>State v{recovery?.state_version||'—'}</strong></header><div className="deploy-gates">{[['Candidate selected',!!recovery?.selected_candidate_id],['Demo legality checks',!!recovery?.validated],['Joint feasibility',false],['Certified validation service',false],['Carrier adapter',false],['Safety approval',false]].map(([label,pass])=><span key={String(label)} className={pass?'pass':''}>{pass?<Check/>:<AlertTriangle/>}<b>{label}</b><small>{pass?'Available':'Blocked'}</small></span>)}</div></section></>}
 function AuditPage({items}:{items:Audit[]}){return <><PageHead eyebrow="DEMO AUDIT" title="Mutable demonstration event history" detail="This local JSON ledger is not immutable, WORM-compliant or suitable for regulatory evidence."/><section className="card"><Table headers={['Timestamp','Action','Actor','Recovery','Detail','Ruleset']} rows={items.map(a=>[new Date(a.timestamp).toLocaleString(),a.action.replaceAll('_',' '),a.operator,a.recovery_id,a.detail,a.ruleset_version])}/>{!items.length&&<p>No demonstration events recorded.</p>}</section></>}
 
+// Truthful, work-preserving messaging for mutation failures. A 409 never discards
+// the operator's context: we keep the current recovery selection and refresh the
+// authoritative state so the action can be retried against the current version.
+export function describeFailure(error:unknown,recovery:Recovery|null,setRecovery:(r:Recovery)=>void):string{
+ if(error instanceof ApiError){
+  if(error.isStale){if(recovery)api.recovery(recovery.id).then(setRecovery).catch(()=>{});return `Plan advanced to state v${error.stateVersion??'?'} elsewhere. Your selection is preserved — review the refreshed state and retry.`}
+  if(error.isValidation)return `Backend rejected the request: ${error.ruleViolations.length} rule finding(s). No candidate was approved.`;
+  if(error.isPermission)return 'Not authorized for this action. Approval and deployment require stepped-up authentication.';
+  return error.correlationId?`${error.message} (correlation ${error.correlationId})`:error.message;
+ }
+ return error instanceof Error?error.message:'Action failed';
+}
+
 export default function App(){
  const routeFromHash=()=>((location.hash.slice(2)||'overview') as Route);
  const[route,setRoute]=useState<Route>(routeFromHash),[d,setD]=useState(fallbackDisruption),[flight,setFlight]=useState(fallbackFlight),[recovery,setRecovery]=useState<Recovery|null>(null),[audit,setAudit]=useState<Audit[]>([]),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  useEffect(()=>{const onHash=()=>setRoute(routeFromHash());addEventListener('hashchange',onHash);api.disruptions().then(x=>x.items[0]&&setD(x.items[0])).catch(()=>{});api.flight('AI421').then(setFlight).catch(()=>{});api.audit().then(x=>setAudit(x.items)).catch(()=>{});return()=>removeEventListener('hashchange',onHash)},[]);
  const go=(next:Route)=>{location.hash=`/${next}`};
- const work=async(fn:()=>Promise<{recovery:Recovery}>,message:string)=>{setBusy(true);try{const result=await fn();setRecovery(result.recovery);setNotice(message);api.audit().then(x=>setAudit(x.items))}catch(error){setNotice(error instanceof Error?error.message:'Action failed')}finally{setBusy(false)}};
+ const work=async(fn:()=>Promise<{recovery:Recovery}>,message:string)=>{setBusy(true);try{const result=await fn();setRecovery(result.recovery);setNotice(message);api.audit().then(x=>setAudit(x.items))}catch(error){setNotice(describeFailure(error,recovery,setRecovery))}finally{setBusy(false)}};
  const run=()=>work(()=>api.createRecovery(d.id),'Executable synthetic candidates generated');
  const choose=(id:string)=>recovery&&work(()=>api.decide(recovery.id,recovery.state_version,id),'Candidate artifact selected');
  const approve=()=>{const selected=recovery?.candidates.find(c=>c.recommended)||recovery?.candidates[0];if(selected)choose(selected.id)};
