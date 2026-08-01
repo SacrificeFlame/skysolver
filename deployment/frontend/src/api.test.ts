@@ -44,4 +44,33 @@ describe('typed contract-preserving errors',()=>{
   expect(err.message).toContain('Request failed');
   expect(err.ruleViolations).toEqual([]);
  });
+ it('parses FastAPI permission-denied detail shape',async()=>{
+  vi.stubGlobal('fetch',vi.fn(()=>errResponse(403,{detail:{code:'permission_denied',permission:'approve'}})));
+  const err=(await api.approve('R1',5,'duty manager approval').catch(e=>e)) as ApiError;
+  expect(err.isPermission).toBe(true);
+  expect(err.code).toBe('permission_denied');
+  expect(err.permission).toBe('approve');
+  expect(err.message).toContain('permission_denied');
+ });
+});
+
+describe('full contract endpoints',()=>{
+ it('requests approvals separately from deployments',async()=>{
+  const fetch=vi.fn((_p:string,_i?:RequestInit)=>response({recovery:{id:'R1'}}));vi.stubGlobal('fetch',fetch);
+  await api.approve('R1',4,'duty manager sign-off');
+  expect(fetch).toHaveBeenCalledWith('/api/v1/recoveries/R1/approvals',expect.objectContaining({method:'POST'}));
+  const init=fetch.mock.calls[0][1]!;
+  expect((init.headers as Record<string,string>)['Expected-State-Version']).toBe('4');
+ });
+ it('loads recovery candidates',async()=>{
+  vi.stubGlobal('fetch',vi.fn(()=>response({items:[{id:'CAN-1'}]})));
+  const result=await api.candidates('R1');
+  expect(result.items[0].id).toBe('CAN-1');
+ });
+ it('reads a deployment record',async()=>{
+  const fetch=vi.fn((_p:string,_i?:RequestInit)=>response({id:'DEP-1',status:'partial',acknowledgements:[]}));vi.stubGlobal('fetch',fetch);
+  const result=await api.deployment('DEP-1');
+  expect(result.status).toBe('partial');
+  expect(fetch.mock.calls[0][0]).toBe('/api/v1/deployments/DEP-1');
+ });
 });
