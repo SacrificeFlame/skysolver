@@ -18,3 +18,8 @@ resource-hold, approval, deployment-command and cross-partition reconciliation
 projections. It preserves partial command outcomes and prevents two active holds
 on the same tenant resource. These are projections of the event stream, not a
 second source of truth.
+
+`004_durable_workflow_commands.sql` adds the workflow snapshot and idempotent
+command-receipt tables used by `DurableRecoveryRepository`. The reservation,
+event, outbox row, snapshot version and exact retry response share one database
+transaction; duplicate keys cannot execute a second mutation.

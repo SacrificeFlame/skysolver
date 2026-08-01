@@ -24,7 +24,7 @@ authority. The UI, API and release gates must continue to say this plainly.
 | Tier 3 | Uncapped legal-option generation, stable IDs, ranking, authenticated accept/reject/hold/edit, revalidation and candidate creation | Depends on synthetic snapshot |
 | Rules | DGCA-oriented checks, signed effective-dated package governance, four-eyes approval, shadow activation and rollback | Incomplete regulatory corpus; not certified |
 | Validation | Separately deployable service, package-bound execution and calculation findings | Certified context requires external approvals |
-| Event state | Aurora transaction boundary, optimistic aggregate stream, outbox, idempotent projection consumer and MSK IAM publisher | API durable store composition not activated |
+| Event state | Atomic workflow command receipts, optimistic aggregate stream, event/outbox/snapshot transaction, deterministic replay, idempotent MSK projection consumer, DLQ and MSK IAM publishing | Production API composition and live AWS dependencies not activated |
 | Cross-partition recovery | Reservation/validation/commit/dual-ACK/compensation saga | No live station capacity systems |
 | Deployment | Resource commands, ACK/NACK/timeout, partial state, retry and compensation distinctions | Carrier adapters and writes disabled |
 | Immutable evidence | KMS-encrypted S3 versioned COMPLIANCE Object Lock writer and integrity verification | AWS bucket not provisioned here |
