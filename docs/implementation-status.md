@@ -26,7 +26,7 @@ authority. The UI, API and release gates must continue to say this plainly.
 | Validation | Separately deployable service, package-bound execution and calculation findings | Certified context requires external approvals |
 | Event state | Atomic workflow command receipts, optimistic aggregate stream, event/outbox/snapshot transaction, deterministic replay, idempotent MSK projection consumer, DLQ and MSK IAM publishing | Production API composition and live AWS dependencies not activated |
 | Cross-partition recovery | Reservation/validation/commit/dual-ACK/compensation saga | No live station capacity systems |
-| Deployment | Resource commands, ACK/NACK/timeout, partial state, retry and compensation distinctions | Carrier adapters and writes disabled |
+| Deployment | Resource commands, restart-safe Aurora claims, per-target idempotency, ACK/NACK/timeout, required-resource completion calculation, partial state, retry and compensation distinctions | Carrier vendor implementations and writes disabled |
 | Immutable evidence | KMS-encrypted S3 versioned COMPLIANCE Object Lock writer and integrity verification | AWS bucket not provisioned here |
 | AWS platform | EKS, Aurora, MSK, Redis, S3, KMS, ECR, Cognito/SAML, ALB/WAF/DNS, backups, Prometheus | Terraform not applied to an AWS account |
 | Release governance | Signed evidence gate for shadow/controlled production | Required evidence has not been supplied |

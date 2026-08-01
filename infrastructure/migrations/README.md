@@ -23,3 +23,8 @@ second source of truth.
 command-receipt tables used by `DurableRecoveryRepository`. The reservation,
 event, outbox row, snapshot version and exact retry response share one database
 transaction; duplicate keys cannot execute a second mutation.
+
+`005_durable_deployment_commands.sql` adds restart-safe command claims,
+per-target idempotency, retry scheduling, command payloads and deployment
+version linkage. A publisher crash leaves the command reclaimable; an adapter
+must reuse the stable command idempotency key on every attempt.
