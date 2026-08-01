@@ -10,9 +10,12 @@ uvicorn>=0.23
 python-multipart>=0.0.6
 websockets>=12.0
 
-# Event streaming (production)
-# pulsar-client>=3.1  # Apache Pulsar client for event log
-# bookkeeper>=0.1  # BookKeeper for write-once-read-many storage
+# Durable production state and Amazon MSK transport
+psycopg[binary,pool]>=3.2
+confluent-kafka>=2.6
+aws-msk-iam-sasl-signer-python>=1.0.2
+boto3>=1.35
+PyJWT[crypto]>=2.10
 
 # Stream processing (production)
 # flink>=1.17  # Apache Flink for stateful event processing
@@ -25,6 +28,7 @@ opentelemetry-sdk>=1.20
 # Testing
 pytest>=7.4
 pytest-asyncio>=0.21
+httpx2>=2.9  # Starlette/FastAPI contract and ASGI tests
 
 # Utilities
 numpy>=1.24  # Numerical operations

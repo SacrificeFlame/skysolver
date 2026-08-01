@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from datetime import datetime
 from typing import Optional
 
-# In production: consume from Pulsar queue
+# Target production transport: consume partition jobs from Amazon MSK.
 # from pulsar import Client
 
 from data.generate import generate_crew_pool, generate_flight_legs, partition_by_hub
@@ -126,7 +126,7 @@ def main():
     start_health_server(int(os.environ.get("HEALTH_PORT", "8080")))
     print(f"Worker started for partition={args.partition}, tier={args.tier}")
 
-    # In production: consume from Pulsar queue
+    # Target production loop consumes from MSK with idempotent checkpoints.
     # client = Client('pulsar://localhost:6650')
     # consumer = client.subscribe('skysolver-partitions', 'worker-group')
 
