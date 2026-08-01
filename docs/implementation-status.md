@@ -22,8 +22,8 @@ authority. The UI, API and release gates must continue to say this plainly.
 | Tier 1 | Legal-first regional incumbent and explicit partial coverage | Demo DGCA profile only |
 | Tier 2 | Restricted-master binary MILP, legal columns, warm start, solver availability and upgrade rejection | Not branch-and-price; no certified gap claim |
 | Tier 3 | Uncapped legal-option generation, stable IDs, ranking, authenticated accept/reject/hold/edit, revalidation and candidate creation | Depends on synthetic snapshot |
-| Rules | DGCA-oriented checks, signed effective-dated package governance, four-eyes approval, shadow activation and rollback | Incomplete regulatory corpus; not certified |
-| Validation | Separately deployable service, package-bound execution and calculation findings | Certified context requires external approvals |
+| Rules | DGCA-oriented assignment checks plus package-driven cumulative flight/duty, credential validity, acclimatization/night, standby, split-duty, augmentation, complement and immigration hooks; signed effective-dated governance and four-eyes activation | Bundled limits are synthetic defaults; regulatory/operator corpus remains incomplete and uncertified |
+| Validation | Separately deployable package-bound service with calculation findings; certificate-eligible execution fails closed without a configured operational profile and complete per-crew evidence | Certified packages, authoritative history and external approvals are not supplied |
 | Event state | Atomic workflow command receipts, optimistic aggregate stream, event/outbox/snapshot transaction, deterministic replay, idempotent MSK projection consumer, DLQ and MSK IAM publishing | Production API composition and live AWS dependencies not activated |
 | Cross-partition recovery | Reservation/validation/commit/dual-ACK/compensation saga | No live station capacity systems |
 | Deployment | Resource commands, restart-safe Aurora claims, per-target idempotency, ACK/NACK/timeout, required-resource completion calculation, partial state, retry and compensation distinctions | Carrier vendor implementations and writes disabled |

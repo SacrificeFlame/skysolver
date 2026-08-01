@@ -16,6 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from rules.certificates import CertificateIssuer
 from rules.engine import Assignment, CrewMember, FlightLeg, Qualification, RulesEngine
+from rules.operational_profile import (
+    AccumulatedTotals, OperationalContext, OperationalLegalityEvaluator, OperationalLimits,
+)
 
 
 class CrewInput(BaseModel):
@@ -46,6 +49,38 @@ class AssignmentInput(BaseModel):
     flight_legs: list[LegInput] = Field(min_length=1)
 
 
+class AccumulatedTotalsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    flight_minutes_28d: int = Field(ge=0)
+    flight_minutes_365d: int = Field(ge=0)
+    duty_minutes_7d: int = Field(ge=0)
+    duty_minutes_28d: int = Field(ge=0)
+
+
+class OperationalEvidenceInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    crew_id: str
+    evaluated_at: datetime
+    history_complete: bool
+    accumulated: AccumulatedTotalsInput | None = None
+    licence_valid_until: datetime | None = None
+    medical_valid_until: datetime | None = None
+    recency_valid_until: datetime | None = None
+    qualification_valid_until: dict[str, datetime] = Field(default_factory=dict)
+    acclimatized: bool | None = None
+    timezone_delta_hours: float | None = None
+    consecutive_night_duties: int | None = Field(default=None, ge=0)
+    standby_minutes_before_report: int = Field(default=0, ge=0)
+    split_break_minutes: int = Field(default=0, ge=0)
+    split_break_approved: bool = False
+    augmented_crew_count: int = Field(default=0, ge=0)
+    rest_facility_class: str | None = None
+    required_roles: set[str] = Field(default_factory=set)
+    assigned_roles: set[str] = Field(default_factory=set)
+    visa_and_transit_allowed: bool | None = None
+    operator_variation_reference: str | None = None
+
+
 class ValidationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     tenant_id: str
@@ -56,6 +91,7 @@ class ValidationRequest(BaseModel):
     crew: list[CrewInput]
     assignments: list[AssignmentInput]
     candidate_artifact: dict[str, Any]
+    operational_evidence: list[OperationalEvidenceInput] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -86,9 +122,13 @@ def _trace(violation: dict[str, Any]) -> dict[str, Any]:
 
 
 class ValidationExecutor:
-    def __init__(self, context: RulesExecutionContext, issuer: CertificateIssuer | None = None):
+    def __init__(self, context: RulesExecutionContext, issuer: CertificateIssuer | None = None,
+                 operational_limits: OperationalLimits | None = None):
         self.context = context
         self.issuer = issuer
+        self.operational_limits = operational_limits
+        if context.certificate_eligible and operational_limits is None:
+            raise RuntimeError("Certified execution requires an operator-approved operational profile")
 
     def validate(self, request: ValidationRequest) -> dict[str, Any]:
         crew_by_id = {}
@@ -101,13 +141,32 @@ class ValidationExecutor:
                 item.crew_id, item.base_hub, qualifications,
                 current_location=item.current_location, last_rest_end=item.last_rest_end,
             )
+        evidence_by_crew = {item.crew_id: item for item in request.operational_evidence}
         findings: list[dict[str, Any]] = []
         for stored in request.assignments:
             if stored.crew_id not in crew_by_id:
                 raise ValueError(f"Assignment references missing crew {stored.crew_id}")
             legs = [FlightLeg(**item.model_dump()) for item in stored.flight_legs]
             assignment = Assignment(stored.crew_id, legs, stored.duty_start, stored.duty_end)
-            findings.extend(item.to_dict() for item in RulesEngine.validate_assignment(crew_by_id[stored.crew_id], assignment))
+            evidence = evidence_by_crew.get(stored.crew_id)
+            if self.operational_limits is None or (evidence is None and not self.context.certificate_eligible):
+                findings.extend(item.to_dict() for item in RulesEngine.validate_assignment(crew_by_id[stored.crew_id], assignment))
+                continue
+            if evidence is None:
+                operational = OperationalContext(evaluated_at=stored.duty_start, history_complete=False)
+            else:
+                values = evidence.model_dump()
+                values.pop("crew_id")
+                accumulated = values.pop("accumulated")
+                values["accumulated"] = AccumulatedTotals(**accumulated) if accumulated else None
+                values["required_roles"] = frozenset(values["required_roles"])
+                values["assigned_roles"] = frozenset(values["assigned_roles"])
+                operational = OperationalContext(**values)
+            evaluator = OperationalLegalityEvaluator(self.operational_limits)
+            findings.extend(item.to_dict() for item in evaluator.evaluate(
+                crew_by_id[stored.crew_id], assignment, operational,
+                strict=self.context.certificate_eligible,
+            ))
         response = {
             "valid": not findings,
             "findings": findings,
@@ -147,6 +206,7 @@ def create_validation_app(executor: ValidationExecutor) -> FastAPI:
             "status": "ready", "ruleset_version": executor.context.ruleset_version,
             "assurance_level": executor.context.assurance_level,
             "certificate_eligible": executor.context.certificate_eligible,
+            "operational_profile_configured": executor.operational_limits is not None,
         }
 
     @app.post("/v1/validate")
