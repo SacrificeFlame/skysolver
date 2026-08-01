@@ -1,5 +1,38 @@
-import type {Audit,DataHealth,Disruption,Envelope,Flight,PlannedRoute,Recovery,RouteValidation,SolverTier,Tier3Queue} from './types';
-async function request<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}});const data=await response.json();if(!response.ok)throw new Error(data.message||data.error||'Request failed');return data}
+import type {Audit,DataHealth,Disruption,Envelope,Flight,PlannedRoute,Recovery,RouteValidation,RuleViolation,SolverTier,Tier3Queue} from './types';
+
+// Typed failure that preserves the backend contract fields the operator UI needs.
+// Never invents success: it exposes the exact HTTP status, correlation id, the
+// server's authoritative state_version (for optimistic-concurrency recovery) and
+// any structured rule findings so callers can render truthful blocked states.
+export class ApiError extends Error{
+  readonly status:number;
+  readonly correlationId?:string;
+  readonly stateVersion?:number;
+  readonly ruleViolations:RuleViolation[];
+  readonly body:unknown;
+  constructor(status:number,body:any){
+    super((body&&(body.message||body.error))||`Request failed (${status||'network error'})`);
+    this.name='ApiError';
+    this.status=status;
+    this.body=body;
+    this.correlationId=body?.correlation_id;
+    this.stateVersion=typeof body?.state_version==='number'?body.state_version:undefined;
+    this.ruleViolations=Array.isArray(body?.rule_violations)?body.rule_violations:[];
+  }
+  /** 409: the plan advanced elsewhere; the operator's input must be preserved and retried against the fresh version. */
+  get isStale():boolean{return this.status===409}
+  /** 422: the backend rejected the request as invalid/illegal; no candidate is approved. */
+  get isValidation():boolean{return this.status===422}
+  /** 401/403: caller lacks authority (approval/deploy need stepped-up auth). */
+  get isPermission():boolean{return this.status===401||this.status===403}
+}
+async function request<T>(path:string,init?:RequestInit):Promise<T>{
+  const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}});
+  let data:any=undefined;
+  try{data=await response.json()}catch{data=undefined} // tolerate empty / non-JSON error bodies
+  if(!response.ok)throw new ApiError(response.status,data);
+  return data as T;
+}
 const operationId=():string=>globalThis.crypto?.randomUUID?.()||`demo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const mutationHeaders=(stateVersion=0,idempotencyKey:string=operationId())=>({'Idempotency-Key':idempotencyKey,'Expected-State-Version':String(stateVersion),'X-Correlation-ID':operationId(),'X-Causation-ID':operationId()});
 export const api={
