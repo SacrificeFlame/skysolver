@@ -1,4 +1,4 @@
-name: CI
+name: Production safety gates
 
 on:
   push:
@@ -7,43 +7,137 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: python -m pip install -r requirements.txt
+      - name: Compile all services
+        run: python -m compileall -q core data deployment integrations passengers predictive rules solvers state chaos
+      - name: Run complete backend suite
+        run: python -m pytest -q
+      - name: Verify production API and safety invariants
+        run: python -m pytest tests/test_production_api.py tests/test_deployment_policy.py tests/test_authorization.py tests/test_deployment_state_machine.py tests/test_resource_holds.py tests/test_joint_feasibility.py -q
+      - name: Smoke-test regional Tier 1
+        run: python -m deployment.worker --partition DEL --tier 1 --time-budget 0.2
+      - name: Smoke-test Tier 2 upgrade path
+        run: python -m deployment.worker --partition DEL --tier 2 --time-budget 0.2
+
   frontend:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: deployment/frontend
+    timeout-minutes: 15
+    defaults: {run: {working-directory: deployment/frontend}}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        with: {version: 11.9.0}
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.13"
           cache: pnpm
           cache-dependency-path: deployment/frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-  test:
+      - run: pnpm test
+      - run: pnpm build
+      - name: Reject floating package versions
+        run: node -e "const p=require('./package.json');for(const [n,v] of Object.entries({...p.dependencies,...p.devDependencies}))if(v==='latest'||/^[~^*<>]/.test(v))throw new Error(n+' is not exactly pinned')"
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: python -m pip install -r requirements.txt
+      - name: Generate OpenAPI artifact
+        run: python -c "import json; from deployment.production_api import app; open('openapi.json','w').write(json.dumps(app.openapi(),sort_keys=True,indent=2))"
+      - name: Contract tests
+        run: python -m pytest tests/test_production_api.py tests/test_canonical_models.py tests/test_ingestion.py -q
+      - uses: actions/upload-artifact@v4
+        with: {name: openapi-contract, path: openapi.json, retention-days: 30}
+
+  infrastructure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: python -m pip install pytest
+      - name: Terraform format
+        run: terraform -chdir=infrastructure/terraform fmt -check -recursive
+      - name: Terraform initialize without state
+        run: terraform -chdir=infrastructure/terraform init -backend=false
+      - name: Terraform validate
+        run: terraform -chdir=infrastructure/terraform validate
+      - name: Kubernetes and carrier-write policy tests
+        run: python -m pytest tests/test_deployment_policy.py -q
+      - name: Scan infrastructure configuration
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  security:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: python -m pip install -r requirements.txt pip-audit bandit
+      - name: Python dependency audit
+        run: pip-audit -r requirements.txt
+      - name: Python static security scan
+        run: bandit -r core deployment integrations passengers predictive rules solvers state -x "*/tests/*" -ll
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [backend, frontend, contracts, infrastructure, security]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build immutable candidate image
+        uses: docker/build-push-action@v6
         with:
-          python-version: "3.11"
-          cache: pip
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
-      - name: Compile Python sources
-        run: python -m compileall -q core data deployment passengers predictive rules solvers state chaos
-      - name: Run test suite
-        run: python -m pytest -q
-      - name: Smoke-test Tier 1 worker
-        run: python -m deployment.worker --partition DEN --tier 1 --time-budget 0.2
-      - name: Smoke-test Tier 2 upgrade path
-        run: python -m deployment.worker --partition DEN --tier 2 --time-budget 0.2
-      - name: Verify deterministic recovery orchestration
-        run: python -m pytest tests/test_orchestrator.py tests/test_event_store_v2.py -q
+          context: .
+          file: deployment/Dockerfile.worker
+          push: false
+          load: true
+          tags: skysolver/worker:${{ github.sha }}
+      - name: Scan candidate image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: skysolver/worker:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          format: sarif
+          output: trivy-results.sarif
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: skysolver/worker:${{ github.sha }}
+          artifact-name: skysolver-worker-sbom.spdx.json
+
+  release-gate:
+    runs-on: ubuntu-latest
+    needs: [container]
+    steps:
+      - run: |
+          echo "Build evidence passed."
+          echo "Carrier publishing remains disabled; this workflow performs no deployment."

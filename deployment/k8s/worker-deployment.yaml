@@ -1,65 +1,99 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skysolver-tier1
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/REPLACE-skysolver-tier1
+automountServiceAccountToken: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: skysolver-worker
-  labels:
-    app: skysolver-worker
+  name: skysolver-tier1
+  labels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
 spec:
-  # Initial replicas; KEDA scales this based on queue depth
   replicas: 3
+  revisionHistoryLimit: 3
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   selector:
-    matchLabels:
-      app: skysolver-worker
+    matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
   template:
     metadata:
-      labels:
-        app: skysolver-worker
+      labels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
     spec:
-      # Per-partition resource quotas for compute isolation
+      serviceAccountName: skysolver-tier1
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
       containers:
-      - name: solver
-        image: skysolver/worker:latest
-        resources:
-          requests:
-            cpu: "500m"
-            memory: "512Mi"
-          limits:
-            cpu: "2"
-            memory: "2Gi"
-        env:
-        - name: PARTITION_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.labels['partition']
-        - name: SOLVER_TIER
-          value: "1"  # Tier 1 default; Tier 2 via separate deployment
-        - name: PULSAR_URL
-          value: "pulsar://pulsar:6650"
-        ports:
-        - containerPort: 8080
-        # Liveness/readiness for graceful degradation
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          initialDelaySeconds: 10
-          periodSeconds: 30
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
+        - name: solver
+          # CI promotion MUST replace this sentinel with an ECR digest.
+          image: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/skysolver-worker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          env:
+            - {name: SOLVER_TIER, value: "1"}
+            - {name: SKYSOLVER_ENV, value: "shadow-production"}
+            - name: MSK_BOOTSTRAP_SERVERS
+              valueFrom: {secretKeyRef: {name: skysolver-msk, key: bootstrap-servers}}
+          resources:
+            requests: {cpu: 500m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+          ports: [{name: health, containerPort: 8080}]
+          livenessProbe:
+            httpGet: {path: /health/live, port: health}
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /health/ready, port: health}
+            periodSeconds: 10
+            failureThreshold: 2
+          lifecycle:
+            preStop: {httpGet: {path: /jobs/drain, port: health}}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 256Mi}
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: skysolver-worker
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: skysolver-tier1}
 spec:
+  minAvailable: 2
   selector:
-    app: skysolver-worker
-  ports:
-  - protocol: TCP
-    port: 8080
-    targetPort: 8080
-  type: ClusterIP
+    matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: skysolver-tier1-default-deny}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: tier1}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/component: api}}
+      ports: [{port: 8080, protocol: TCP}]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}
+      ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+    - to:
+        - namespaceSelector: {matchLabels: {skysolver.io/data-plane: "true"}}
+      ports: [{port: 9098, protocol: TCP}, {port: 5432, protocol: TCP}, {port: 6379, protocol: TCP}]

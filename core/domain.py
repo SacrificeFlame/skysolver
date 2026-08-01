@@ -51,7 +51,7 @@ class RecoveryTier(str, Enum):
 class AuditMetadata:
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     causation_id: str | None = None
-    ruleset_version: str = "synthetic-far117-v2"
+    ruleset_version: str = "dgca-car-sec7-serj-ptiii-2024.1"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 

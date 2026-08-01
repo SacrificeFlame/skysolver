@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: skysolver-validation
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/REPLACE-skysolver-validation
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: skysolver-validation
+  labels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}
+    spec:
+      serviceAccountName: skysolver-validation
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}
+      containers:
+        - name: validation
+          image: 111111111111.dkr.ecr.ap-south-1.amazonaws.com/skysolver-validation@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          args: ["uvicorn", "rules.validation_service:app", "--host", "0.0.0.0", "--port", "8080"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          ports: [{name: http, containerPort: 8080}]
+          resources:
+            requests: {cpu: 250m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          livenessProbe: {httpGet: {path: /health/live, port: http}}
+          readinessProbe: {httpGet: {path: /health/ready, port: http}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes: [{name: tmp, emptyDir: {sizeLimit: 64Mi}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: skysolver-validation}
+spec:
+  selector: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: skysolver-validation}
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: skysolver, app.kubernetes.io/component: validation}

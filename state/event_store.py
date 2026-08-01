@@ -165,7 +165,7 @@ class EventStore:
         return MaterializedView.rebuild(self.get_partition_stream(partition_id))
 
     def serialize(self, filepath: str) -> None:
-        """Persist to JSON (BookKeeper/Pulsar in production)."""
+        """Persist the local synthetic reference stream to JSON."""
         with open(filepath, 'w') as f:
             json.dump([e.to_dict() for e in self._all_events], f, indent=2)
 

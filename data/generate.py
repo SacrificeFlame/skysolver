@@ -14,7 +14,7 @@ from typing import Iterator
 from rules.engine import CrewMember, FlightLeg, Qualification
 
 
-HUBS = ["DEN", "ORD", "ATL", "LAX", "MIA", "DFW", "EWR", "SEA", "PHX", "LAS"]
+HUBS = ["DEL", "BOM", "BLR", "HYD", "MAA", "CCU", "AMD", "COK", "GOI", "PNQ"]
 AIRCRAFT = ["B737", "A320", "B777", "A321", "B787"]
 
 

@@ -2,8 +2,10 @@
   "name": "skysolver-occ",
   "private": true,
   "version": "2.0.0",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {"node": ">=22.13.0"},
   "type": "module",
   "scripts": {"dev": "vite", "build": "tsc --noEmit && vite build", "test": "vitest run"},
-  "dependencies": {"@vitejs/plugin-react": "latest", "vite": "latest", "typescript": "latest", "react": "latest", "react-dom": "latest", "lucide-react": "latest"},
-  "devDependencies": {"@types/react": "latest", "@types/react-dom": "latest", "vitest": "latest", "jsdom": "latest"}
+  "dependencies": {"@vitejs/plugin-react": "6.0.5", "vite": "8.2.0", "typescript": "7.0.2", "react": "19.2.8", "react-dom": "19.2.8", "lucide-react": "1.28.0"},
+  "devDependencies": {"@types/react": "19.2.17", "@types/react-dom": "19.2.3", "vitest": "4.1.10", "jsdom": "30.0.1"}
 }

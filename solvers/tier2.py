@@ -1,18 +1,18 @@
-"""
-SkySolver v2 - Tier 2 MILP-based Optimizer
+"""Tier 2 optimization upgrade.
 
-Mathematical optimization layer that builds on Tier 1's legal guarantees to
-find near-optimal schedules via Mixed Integer Programming. Uses column
-generation to responsively add assignments while respecting FAR 117
-constraints through the rules engine. Designed to converge to better
-solutions than Tier 1 within 5-minute time budget for regional partitions.
+Legal assignment columns are generated through the dedicated rules layer and
+selected by an actual binary set-partitioning MILP when a configured solver is
+available. This is restricted-master optimization, not branch-and-price or a
+claim of global optimality. If no solver is available, Tier 1 remains the
+incumbent and the result says so explicitly.
 """
 
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Set, Optional, Tuple, Iterator
+from typing import List, Dict, Set, Optional, Tuple, Iterator, Any
+import os
 from datetime import datetime, timedelta
 
 from rules.engine import (
@@ -38,9 +38,35 @@ class Column:
     violations: List[str] = tuple()  # Empty = legal
 
 
+@dataclass
+class OptimizationMetadata:
+    status: str
+    solver_name: str | None
+    objective_value: float | None
+    best_bound: float | None
+    optimality_gap: float | None
+    elapsed_s: float
+    generated_columns: int
+    incumbent_coverage: float
+    result_coverage: float
+    upgraded: bool
+    message: str
+
+
+@dataclass
+class OptimizationResult:
+    assignments: List[Assignment]
+    uncovered: List[FlightLeg]
+    metadata: OptimizationMetadata
+
+    @property
+    def converged(self) -> bool:
+        return not self.uncovered and self.metadata.status in {"optimal", "feasible", "timeboxed_feasible"}
+
+
 class ColumnGenerationSolver:
     """
-    Tier 2 solver using column generation with resource-constrained shortest path.
+    Legal-column generator retained for the restricted MILP master.
 
     Each column represents a potential crew assignment. The master problem
     selects columns to cover all flights. Subproblem generates new columns.
@@ -151,7 +177,8 @@ class ColumnGenerationSolver:
         columns: List[Column]
     ) -> Optional[Dict[str, List[Column]]]:
         """
-        Greedy master problem: select columns to cover flights.
+        Legacy development selector. Production Tier 2 uses
+        :class:`RestrictedMasterOptimizer` below.
         Returns dict mapping flight_id -> selected column, or None if inconverge.
         """
         # Build coverage map
@@ -260,6 +287,110 @@ class ColumnGenerationSolver:
         return assignments
 
 
+class RestrictedMasterOptimizer:
+    """Binary set-partitioning master over independently legal columns."""
+
+    def __init__(self, time_budget_s: float = 300.0, solver_name: str | None = None):
+        self.time_budget_s = time_budget_s
+        self.solver_name = solver_name or os.environ.get("SKYSOLVER_MILP_SOLVER", "highs")
+
+    @staticmethod
+    def build_model(columns: List[Column], flights: List[FlightLeg]):
+        from pyomo.environ import Binary, ConcreteModel, Constraint, Objective, RangeSet, Set, Var, minimize
+
+        model = ConcreteModel()
+        model.C = RangeSet(0, max(len(columns) - 1, 0)) if columns else Set(initialize=[])
+        model.F = Set(initialize=[flight.flight_id for flight in flights], ordered=True)
+        model.x = Var(model.C, domain=Binary)
+        model.uncovered = Var(model.F, domain=Binary)
+        coverage = {flight.flight_id: [index for index, column in enumerate(columns)
+                                      if any(leg.flight_id == flight.flight_id for leg in column.legs)]
+                    for flight in flights}
+        crew_columns: Dict[str, List[int]] = {}
+        for index, column in enumerate(columns):
+            crew_columns.setdefault(column.crew_id, []).append(index)
+
+        def cover_rule(instance, flight_id):
+            return sum(instance.x[index] for index in coverage[flight_id]) + instance.uncovered[flight_id] == 1
+
+        model.cover_exactly_once = Constraint(model.F, rule=cover_rule)
+        model.CREW = Set(initialize=sorted(crew_columns))
+        model.one_duty_per_crew = Constraint(
+            model.CREW,
+            rule=lambda instance, crew_id: sum(instance.x[index] for index in crew_columns[crew_id]) <= 1,
+        )
+        model.objective = Objective(
+            expr=10_000 * sum(model.uncovered[flight_id] for flight_id in model.F)
+                 + sum(columns[index].cost * model.x[index] for index in model.C),
+            sense=minimize,
+        )
+        return model
+
+    def solve(self, crew_pool: List[CrewMember], flights: List[FlightLeg],
+              tier1_initial: Optional[List[Assignment]] = None) -> OptimizationResult:
+        started = time.monotonic()
+        incumbent = list(tier1_initial or [])
+        incumbent_covered = {leg.flight_id for assignment in incumbent for leg in assignment.flight_legs}
+        generator = ColumnGenerationSolver(max(0.01, self.time_budget_s * 0.35))
+        deadline = time.monotonic() + max(0.01, self.time_budget_s * 0.35)
+        columns: List[Column] = []
+        for assignment in incumbent:
+            columns.append(Column(assignment.crew_id, tuple(assignment.flight_legs), generator._compute_duty_cost(assignment.flight_legs)))
+        for crew in crew_pool:
+            if time.monotonic() >= deadline:
+                break
+            columns.extend(generator._generate_columns_for_crew(crew, flights, deadline))
+        unique: Dict[tuple[str, tuple[str, ...]], Column] = {}
+        for column in columns:
+            key = (column.crew_id, tuple(leg.flight_id for leg in column.legs))
+            unique[key] = column
+        columns = list(unique.values())
+        base_coverage = len(incumbent_covered) / max(len(flights), 1)
+        try:
+            from pyomo.environ import SolverFactory, value
+            model = self.build_model(columns, flights)
+            solver = SolverFactory(self.solver_name)
+            if not solver.available(exception_flag=False):
+                raise RuntimeError(f"Configured MILP solver '{self.solver_name}' is unavailable")
+            for index, column in enumerate(columns):
+                if any(column.crew_id == item.crew_id and
+                       {leg.flight_id for leg in column.legs} == {leg.flight_id for leg in item.flight_legs}
+                       for item in incumbent):
+                    model.x[index].value = 1
+            if self.solver_name in {"highs", "appsi_highs"}:
+                solver.options["time_limit"] = max(0.01, self.time_budget_s - (time.monotonic() - started))
+            result = solver.solve(model, tee=False, load_solutions=True)
+            termination = str(result.solver.termination_condition).lower()
+            selected = [columns[index] for index in range(len(columns)) if value(model.x[index]) >= 0.5]
+            assignments = [Assignment(column.crew_id, list(column.legs),
+                                      min(leg.scheduled_dep for leg in column.legs),
+                                      max(leg.scheduled_arr for leg in column.legs)) for column in selected]
+            covered = {leg.flight_id for assignment in assignments for leg in assignment.flight_legs}
+            uncovered = [flight for flight in flights if flight.flight_id not in covered]
+            coverage = len(covered) / max(len(flights), 1)
+            if coverage < base_coverage:
+                assignments = incumbent
+                covered = incumbent_covered
+                uncovered = [flight for flight in flights if flight.flight_id not in covered]
+                coverage = base_coverage
+                upgraded = False
+                message = "MILP result was worse than the legal Tier 1 incumbent and was rejected"
+            else:
+                upgraded = coverage > base_coverage or value(model.objective) < 10_000 * (len(flights)-len(incumbent_covered))
+                message = "Restricted MILP master returned a legal incumbent upgrade" if upgraded else "MILP retained Tier 1 incumbent"
+            status = "optimal" if "optimal" in termination else ("timeboxed_feasible" if "time" in termination else "feasible")
+            return OptimizationResult(assignments, uncovered, OptimizationMetadata(
+                status, self.solver_name, float(value(model.objective)), None, None,
+                time.monotonic()-started, len(columns), base_coverage, coverage, upgraded, message,
+            ))
+        except Exception as exc:
+            uncovered = [flight for flight in flights if flight.flight_id not in incumbent_covered]
+            return OptimizationResult(incumbent, uncovered, OptimizationMetadata(
+                "solver_unavailable", self.solver_name, None, None, None,
+                time.monotonic()-started, len(columns), base_coverage, base_coverage, False, str(exc),
+            ))
+
+
 # ----------------------------------------------------------------------
 # TIER 2 API
 # ----------------------------------------------------------------------
@@ -277,17 +408,12 @@ def solve_partition(
     - converged=True if all flights covered within time budget
     - converged=False if time expired, returned partial solution
     """
-    start = time.monotonic()
-    solver = ColumnGenerationSolver(time_budget_s)
-    assignments = solver.solve(crew_pool, flights, tier1_initial)
-    elapsed = time.monotonic() - start
+    result = solve_partition_detailed(crew_pool, flights, time_budget_s, tier1_initial)
+    return result.assignments, result.uncovered, result.metadata.elapsed_s, result.converged
 
-    covered_flight_ids = set()
-    for a in assignments:
-        for leg in a.flight_legs:
-            covered_flight_ids.add(leg.flight_id)
 
-    uncovered = [f for f in flights if f.flight_id not in covered_flight_ids]
-    converged = len(uncovered) == 0
-
-    return assignments, uncovered, elapsed, converged
+def solve_partition_detailed(
+    crew_pool: List[CrewMember], flights: List[FlightLeg], time_budget_s: float = 300.0,
+    tier1_initial: Optional[List[Assignment]] = None,
+) -> OptimizationResult:
+    return RestrictedMasterOptimizer(time_budget_s).solve(crew_pool, flights, tier1_initial)

@@ -2,7 +2,8 @@
 SkySolver v2 - Tier 1 fast heuristic solver.
 
 Greedy construction + large-neighborhood-search (LNS) improvement.
-Goal: produce a *legal* (FAR 117-compliant) schedule in sub-second time.
+Goal: produce a schedule accepted by the configured legality service within a
+short time box. The bundled DGCA-oriented demo profile is not certified.
 Optimality is secondary - a mediocre answer that always responds beats a
 perfect one that sometimes doesn't.
 

@@ -36,7 +36,7 @@ services:
     build:
       context: .
       dockerfile: deployment/Dockerfile.worker
-    command: python -m deployment.dashboard
+    command: python -m deployment.app_server
     ports:
       - "8501:8501"
     depends_on:

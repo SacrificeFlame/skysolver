@@ -45,7 +45,7 @@ class TestTier1BasicCoverage:
 
 
 class TestTier1Legality:
-    """All assignments returned by Tier 1 must be FAR 117 legal."""
+    """All assignments returned by Tier 1 must pass the configured legality profile."""
 
     def test_all_assignments_legal(self):
         from data.generate import generate_crew_pool, generate_flight_legs, partition_by_hub

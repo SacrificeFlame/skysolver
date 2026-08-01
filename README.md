@@ -2,20 +2,21 @@
 
 SkySolver is an early-stage, synthetic-data prototype for resilient airline disruption recovery. Its goal is to produce a legal partial crew-recovery plan quickly, improve that plan within a time budget, and preserve a human-assisted path when automation cannot safely resolve every flight.
 
-The repository is **not production-ready airline software**. It does not process real carrier data, and its rules engine models only a simplified, FAR 117-style subset. Several distributed-system and optimizer components described in `architecture.md` remain design targets rather than deployed capabilities.
+The repository is **not production-ready airline software**. It does not process real carrier data, and its DGCA-oriented rules profile is not operator-approved or certified. Carrier publishing is disabled and production-shaped configuration fails closed unless a durable workflow composition is injected.
 
 ## Implemented prototype capabilities
 
 - Hub-based synthetic crew and flight partitioning.
 - A dedicated, independently tested crew-legality module.
 - A bounded Tier 1 greedy heuristic with legal partial results.
-- A Tier 2 upgrade-path scaffold with a Tier 1 warm start.
-- A Tier 3 review API with a durable scheduler decision ledger.
-- In-memory event-sourced crew state and cross-partition reconciliation.
+- A restricted-master MILP Tier 2 upgrade path with a Tier 1 warm start and truthful solver telemetry.
+- An authenticated, versioned Tier 3 scheduler workflow with no automatic approval.
+- Aurora event/outbox repositories, MSK IAM publishing, rebuildable projections and cross-partition sagas.
 - Synthetic passenger-recovery examples.
 - A synthetic chaos/replay harness.
 - A React + TypeScript cinematic OCC command canvas with real recovery workflow state.
-- Docker, Kubernetes, KEDA, Prometheus, Railway, and worker examples.
+- KMS/S3 Object Lock artifacts, OIDC/RBAC/MFA gates and signed release evidence.
+- Terraform for EKS, Aurora, MSK, Redis, S3, KMS, Cognito federation, ALB/WAF/Route 53, backups and managed Prometheus.
 
 See [docs/implementation-status.md](docs/implementation-status.md) for the verified maturity of each area and the current production gaps.
 
@@ -52,11 +53,11 @@ The command canvas connects to `/api/v1/disruptions`, `/flights`, `/recoveries`,
 ## Run solver-worker demos
 
 ```bash
-python -m deployment.worker --partition DEN --tier 1 --time-budget 1
-python -m deployment.worker --partition DEN --tier 2 --time-budget 1
+python -m deployment.worker --partition DEL --tier 1 --time-budget 1
+python -m deployment.worker --partition DEL --tier 2 --time-budget 1
 ```
 
-These commands generate synthetic inputs and exit after processing them. Queue consumption is not implemented yet.
+These commands generate synthetic inputs and exit after processing them. The transactional outbox publisher has a concrete Aurora IAM/MSK IAM runtime; the solver job-consumer runtime remains incomplete.
 
 ## Run tests
 
@@ -68,11 +69,11 @@ The suite covers structured legality, optimistic event concurrency, tier orchest
 
 ## Important limitations
 
-- Tier 2 builds legal multi-leg columns but its master selection is still a heuristic, not a genuine MILP/CP-SAT implementation.
-- Tier 3 queues are process-local; scheduler decisions are persisted to SQLite but are not deployed to an external carrier schedule.
-- Pulsar, BookKeeper, Flink, and production worker queues are not connected.
+- Tier 2 is an actual restricted-master MILP when a configured solver is available, but it is not branch-and-price and has no certified optimality claim.
+- Tier 3 is integrated into the authenticated recovery API, but real airline resource inputs are unavailable.
+- Aurora/MSK adapters and projections exist; the full API-side durable workflow store and solver job consumer are not yet activated.
 - The dashboard is backend-connected but uses an explicitly labelled synthetic scenario rather than carrier feeds.
-- Authentication and authorization are demo-grade.
+- Enterprise OIDC validation, RBAC and MFA step-up paths exist, but no airline IdP is configured in this repository.
 - No license has been selected.
 
 ## Project direction
