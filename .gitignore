@@ -1,10 +1,14 @@
 .sky-decisions.db
 .sky_metrics.json
 .sky_events.json
+.sky_recovery_state.json
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.testdeps/
+.test-tmp/
+.audit/
 deployment/frontend/node_modules/
 *.tsbuildinfo
 deployment/frontend/vite.config.js

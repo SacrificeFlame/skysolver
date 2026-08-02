@@ -1,5 +1,5 @@
 """
-FAR 117 Rules Engine - Unit Tests as Primary Specification.
+Legacy boundary corpus retained for the DGCA-oriented demo rules profile.
 
 These tests define the legal behavior. All solver tiers must pass these tests.
 """
@@ -12,7 +12,7 @@ from rules.engine import (
 
 
 class TestDutyTimeLimits:
-    """FAR 117.11/117.13 - Maximum duty period."""
+    """Demo maximum duty-period boundary."""
 
     def test_legal_duty_within_14_hours(self):
         crew = CrewMember("C001", "DFW", {Qualification.B737}, last_rest_end=datetime(2023, 12, 31, 20))  # rested >=10h before 07:00 duty start
@@ -46,7 +46,7 @@ class TestDutyTimeLimits:
 
 
 class TestFlightTimeLimits:
-    """FAR 117.11 - Maximum flight time (block time)."""
+    """Demo maximum flight-time boundary."""
 
     def test_legal_flight_time_under_9_hours(self):
         crew = CrewMember("C001", "DFW", {Qualification.B737}, last_rest_end=datetime(2023, 12, 31, 20))  # rested >=10h before 07:00 duty start
@@ -69,7 +69,7 @@ class TestFlightTimeLimits:
 
 
 class TestRestPeriods:
-    """FAR 117.25 - Minimum rest period."""
+    """Demo minimum-rest boundary."""
 
     def test_legal_rest_10_hours(self):
         crew = CrewMember("C001", "DFW", {Qualification.B737}, last_rest_end=datetime(2023, 12, 31, 20))  # rested >=10h before 07:00 duty start

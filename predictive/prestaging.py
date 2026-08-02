@@ -251,21 +251,21 @@ class PredictivePreStager:
 # SIGNAL SOURCE (Synthetic - No real airline data)
 # ----------------------------------------------------------------------
 
-def generate_elliott_signal(base_time: datetime) -> DisruptionSignal:
+def generate_severe_monsoon_signal(base_time: datetime) -> DisruptionSignal:
     """
-    Generate a synthetic Winter Storm Elliott-scale signal.
+    Generate a synthetic severe Indian monsoon disruption signal.
 
     NOT real data - synthetic for testing only.
     """
     return DisruptionSignal(
-        signal_id="SYNTH_ELLIOTT_2022",
+        signal_id="SYNTH_INDIA_MONSOON",
         type=DisruptionType.WEATHER,
         severity=Severity.CRITICAL,
-        affected_hubs=["DEN", "ORD", "ATL", "DFW", "EWR", "MIA", "LAX"],
+        affected_hubs=["DEL", "BOM", "BLR", "HYD", "CCU", "MAA", "COK"],
         start_time=base_time,
         end_time=base_time + timedelta(hours=72),
         confidence=0.85,
-        description="Synthetic Winter Storm Elliott-scale winter weather event",
+        description="Synthetic multi-day monsoon and flow-control disruption",
     )
 
 
@@ -290,7 +290,7 @@ if __name__ == "__main__":
     prestager = PredictivePreStager()
     baseline = datetime(2024, 1, 15)
 
-    signals = [generate_elliott_signal(baseline), generate_mild_signal(baseline)]
+    signals = [generate_severe_monsoon_signal(baseline), generate_mild_signal(baseline)]
     crew = generate_crew_pool(500, baseline)
 
     plan = prestager.generate_prestage_plan(signals, crew)

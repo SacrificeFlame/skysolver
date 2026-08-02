@@ -7,9 +7,19 @@ audit and legal validation) while remaining an explicitly synthetic adapter.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import json
+import os
 import threading
 import uuid
+
+from rules.engine import Assignment, CrewMember, FlightLeg, Qualification, RulesEngine
+from solvers.tier1 import solve_partition as solve_tier1
+from solvers.tier2 import solve_partition_detailed as solve_tier2_detailed
+from deployment.command_state import CommandStatus, DeploymentConflict, DeploymentRegistry, DeploymentStatus
+from core.resource_holds import HoldConflict, ResourceHoldRegistry
+from rules.certificates import CertificateIssuer, LegalityCertificate
+from solvers.tier3_api import SuggestionStatus, generate_suggestions
 
 
 def _now() -> str:
@@ -33,11 +43,24 @@ DISRUPTIONS = [{
     "passengers": 1284, "status": "active",
 }]
 
-CANDIDATES = [
-    {"id": "PLAN-A", "name": "Network balance", "recommended": True, "legal": True, "coverage": 0.92, "flights_recovered": 11, "total_delay": 486, "max_delay": 92, "illegal_crews": 0, "aircraft_swaps": 2, "gate_conflicts": 0, "misconnections": 126, "passengers_recovered": 942, "cost": 18100000, "risk": "low", "warnings": ["2 positioning flights required"], "changes": ["Assign IC-927 relief crew to AI421", "Swap UK945 equipment with AI701", "Move AI421 from T3-42 to T3-46"]},
-    {"id": "PLAN-B", "name": "Passenger priority", "recommended": False, "legal": True, "coverage": 0.83, "flights_recovered": 10, "total_delay": 531, "max_delay": 106, "illegal_crews": 0, "aircraft_swaps": 1, "gate_conflicts": 1, "misconnections": 58, "passengers_recovered": 1081, "cost": 20500000, "risk": "medium", "warnings": ["Gate T3-46 remains constrained", "6E203 holds 14 minutes"], "changes": ["Protect 37 6E203 connections", "Consolidate two BOM rotations", "Cancel AI620"]},
-    {"id": "PLAN-C", "name": "Cost containment", "recommended": False, "legal": False, "coverage": 0.75, "flights_recovered": 9, "total_delay": 402, "max_delay": 88, "illegal_crews": 1, "aircraft_swaps": 0, "gate_conflicts": 0, "misconnections": 244, "passengers_recovered": 706, "cost": 14200000, "risk": "high", "warnings": ["DGCA FDTL duty limit on crew IC-184"], "changes": ["Extend IC-184 duty by 38 minutes", "Cancel UK945"]},
-]
+DATA_PROVENANCE = {
+    "mode": "synthetic-demo",
+    "authoritative": False,
+    "source_system": "skysolver-scenario-fixture",
+    "state_version": 1,
+    "freshness": "fixture",
+    "warning": "SYNTHETIC DEMO — NOT FOR OPERATIONAL USE",
+}
+
+# Authoritative within the demo fixture: route validation must use these
+# profiles rather than manufacturing an appropriately rested crew member.
+CREW_PROFILES = {
+    "IC-184": {"location": "DEL", "qualifications": ["A321"], "rest_hours": 5},
+    "IC-072": {"location": "BLR", "qualifications": ["A320"], "rest_hours": 12},
+    "IC-811": {"location": "DEL", "qualifications": ["A320"], "rest_hours": 12},
+    "IC-333": {"location": "BOM", "qualifications": ["B787"], "rest_hours": 12},
+    "IC-590": {"location": "DEL", "qualifications": ["A320"], "rest_hours": 12},
+}
 
 AIRPORTS = {
     "DEL": {"name": "Delhi", "x": 445, "y": 112}, "BOM": {"name": "Mumbai", "x": 332, "y": 262},
@@ -62,30 +85,52 @@ class WorkflowError(Exception):
 
 
 class RecoveryStore:
-    def __init__(self):
+    durable_authoritative = False
+
+    def __init__(self, state_path=None, carrier_writes_enabled=False):
         self._lock = threading.RLock()
         self._recoveries = {}
         self._audit = []
         self._idempotency = {}
+        self._state_path = state_path
+        self._carrier_writes_enabled = carrier_writes_enabled
+        self._deployment_registry = DeploymentRegistry()
+        self._hold_registry = ResourceHoldRegistry()
+        self._certificate_issuer = CertificateIssuer("demo-local-key", os.environ.get("SKYSOLVER_DEMO_CERTIFICATE_KEY", "synthetic-demo-not-production").encode(), "validation-demo-process", "2026.08", "demo_in_process_not_certified")
+        self._load()
+
+    def _load(self):
+        if not self._state_path or not os.path.exists(self._state_path): return
+        try:
+            with open(self._state_path, "r", encoding="utf-8") as handle: state=json.load(handle)
+            self._recoveries=state.get("recoveries",{}); self._audit=state.get("audit",[]); self._idempotency=state.get("idempotency",{})
+        except (OSError, ValueError):
+            self._recoveries={}; self._audit=[]; self._idempotency={}
+
+    def _persist(self):
+        if not self._state_path:return
+        temp=f"{self._state_path}.tmp"
+        with open(temp,"w",encoding="utf-8") as handle: json.dump({"recoveries":self._recoveries,"audit":self._audit,"idempotency":self._idempotency},handle,indent=2)
+        os.replace(temp,self._state_path)
 
     @staticmethod
-    def envelope(status: str, state_version: int, **extra):
-        return {"correlation_id": str(uuid.uuid4()), "state_version": state_version, "action_status": status, "rule_violations": [], **extra}
+    def envelope(status: str, state_version: int, correlation_id=None, causation_id=None, **extra):
+        return {"correlation_id": correlation_id or str(uuid.uuid4()), "causation_id": causation_id, "state_version": state_version, "action_status": status, "rule_violations": [], **extra}
 
     def disruptions(self):
-        return deepcopy(DISRUPTIONS)
+        return [{**deepcopy(item), "provenance": deepcopy(DATA_PROVENANCE)} for item in DISRUPTIONS]
 
     def disruption(self, disruption_id):
         item = next((d for d in DISRUPTIONS if d["id"] == disruption_id), None)
         if not item:
             raise WorkflowError(404, "not_found", "Disruption not found")
-        return deepcopy(item)
+        return {**deepcopy(item), "provenance": deepcopy(DATA_PROVENANCE)}
 
     def flight(self, flight_id):
         item = next((f for f in FLIGHTS if f["id"] == flight_id), None)
         if not item:
             raise WorkflowError(404, "not_found", "Flight not found")
-        return deepcopy(item)
+        return {**deepcopy(item), "provenance": deepcopy(DATA_PROVENANCE)}
 
     def routes(self):
         return [self.route(flight["id"]) for flight in FLIGHTS]
@@ -97,13 +142,14 @@ class RecoveryStore:
         meta = ROUTES[flight_id]
         origin, destination = AIRPORTS[flight["origin"]], AIRPORTS[flight["destination"]]
         return deepcopy({
-            "flight_id": flight_id, "origin": {"code": flight["origin"], **origin},
+            "flight_id": flight_id, "origin": {"code": flight["origin"], "o": origin["x"], **origin},
             "destination": {"code": flight["destination"], **destination},
             "aircraft": flight["aircraft"], "crew_id": flight["crew"]["id"],
             "distance_km": meta["distance_km"], "block_minutes": meta["block_minutes"],
             "scheduled": {"departure": meta["scheduled"][0], "arrival": meta["scheduled"][1]},
             "proposed": {"departure": meta["proposed"][0], "arrival": meta["proposed"][1]},
             "restriction": meta["airspace"], "legal": flight["crew"]["status"] != "illegal",
+            "provenance": deepcopy(DATA_PROVENANCE),
             "movement_segments": [
                 {"time": meta["proposed"][0], "place": flight["origin"], "kind": "report", "detail": f"Gate {flight['proposed_gate']}"},
                 {"time": meta["proposed"][0], "place": flight_id, "kind": "operate", "detail": f"{flight['origin']} to {flight['destination']}"},
@@ -111,13 +157,76 @@ class RecoveryStore:
             ],
         })
 
+    def validate_route(self, flight_id, payload=None):
+        route=self.route(flight_id); flight=self.flight(flight_id); meta=ROUTES[flight_id]
+        day=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
+        dep_h,dep_m=map(int,meta["proposed"][0].split(":")); arr_h,arr_m=map(int,meta["proposed"][1].split(":"))
+        dep=day+timedelta(hours=dep_h,minutes=dep_m); arr=day+timedelta(hours=arr_h,minutes=arr_m)
+        if arr<=dep:arr+=timedelta(days=1)
+        aircraft=flight["aircraft"]["type"].replace("-8","").replace("neo","")
+        profile=CREW_PROFILES[flight["crew"]["id"]]
+        qualifications={Qualification.__members__[name] for name in profile["qualifications"] if name in Qualification.__members__}
+        crew=CrewMember(flight["crew"]["id"],flight["origin"],qualifications,current_location=profile["location"],last_rest_end=dep-timedelta(hours=profile["rest_hours"]))
+        leg=FlightLeg(flight_id,flight["origin"],flight["destination"],dep,arr,aircraft)
+        assignment=Assignment(crew.crew_id,[leg],dep-timedelta(minutes=45),arr+timedelta(minutes=20))
+        violations=RulesEngine.validate_assignment(crew,assignment)
+        result=self.envelope("valid" if not violations else "invalid",DATA_PROVENANCE["state_version"],correlation_id=(payload or {}).get("correlation_id"),causation_id=(payload or {}).get("causation_id"),flight_id=flight_id,legal=not violations,ruleset_version=RulesEngine.RULESET_VERSION,provenance=deepcopy(DATA_PROVENANCE),checks={"airport_sequence":route["origin"]["code"]==leg.origin and route["destination"]["code"]==leg.destination,"positive_distance":route["distance_km"]>0,"arrival_after_departure":arr>dep},rule_violations=[v.to_dict() for v in violations])
+        self._record(flight_id,"route_validated",(payload or {}).get("operator_id","ops-controller"),f"{len(violations)} legality findings")
+        self._persist(); return result
+
+    def solver_tiers(self):
+        """Run the real solver implementations on the current synthetic India partition."""
+        crews,legs=self._scenario_inputs()
+        tier1=solve_tier1(crews,legs,0.5)
+        tier2=solve_tier2_detailed(crews,legs,1.0,tier1.assignments)
+        tier2_assignments,tier2_uncovered=tier2.assignments,tier2.uncovered
+        tier2_elapsed,tier2_complete=tier2.metadata.elapsed_s,tier2.converged
+        total=len(legs)
+        return {"generated_at":_now(),"partition_id":"INDIA-NORTH","ruleset_version":RulesEngine.RULESET_VERSION,"data_mode":"executable-synthetic","provenance":deepcopy(DATA_PROVENANCE),"tiers":[
+            {"id":"tier1","name":"Immediate Legal Recovery","status":"viable" if tier1.complete else "partial","coverage":tier1.coverage,"legal_assignments":len(tier1.assignments),"unresolved":len(tier1.uncovered),"elapsed_s":tier1.elapsed_s,"reason":"Fast legal incumbent from greedy + LNS"},
+            {"id":"tier2","name":"Optimization Upgrade","status":tier2.metadata.status,"coverage":tier2.metadata.result_coverage,"legal_assignments":len(tier2_assignments),"unresolved":len(tier2_uncovered),"elapsed_s":tier2_elapsed,"reason":tier2.metadata.message,"solver_name":tier2.metadata.solver_name,"objective_value":tier2.metadata.objective_value,"best_bound":tier2.metadata.best_bound,"optimality_gap":tier2.metadata.optimality_gap,"generated_columns":tier2.metadata.generated_columns,"upgraded":tier2.metadata.upgraded},
+            {"id":"tier3","name":"Human-Assisted Recovery","status":"ready" if tier2_uncovered else "standby","coverage":1-len(tier2_uncovered)/total,"legal_assignments":0,"unresolved":len(tier2_uncovered),"elapsed_s":0,"reason":"Scheduler queue remains available when automation is incomplete"}
+        ]}
+
+    def _scenario_inputs(self):
+        day=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
+        legs=[]; crews=[]
+        for index,flight in enumerate(FLIGHTS):
+            meta=ROUTES[flight["id"]]; dh,dm=map(int,meta["proposed"][0].split(":")); ah,am=map(int,meta["proposed"][1].split(":"))
+            dep=day+timedelta(hours=dh,minutes=dm); arr=day+timedelta(hours=ah,minutes=am)
+            aircraft=flight["aircraft"]["type"].replace("-8","").replace("neo","")
+            legs.append(FlightLeg(flight["id"],flight["origin"],flight["destination"],dep,arr,aircraft))
+            qualification=Qualification.__members__.get(aircraft)
+            crews.append(CrewMember(f"SIM-{index+1:03}",flight["origin"],{qualification} if qualification else set(),current_location=flight["origin"],last_rest_end=dep-timedelta(hours=12)))
+        return crews,legs
+
+    @staticmethod
+    def _serialize_assignment(assignment):
+        return {"crew_id":assignment.crew_id,"duty_start":assignment.duty_start.isoformat(),"duty_end":assignment.duty_end.isoformat(),"flight_legs":[{"flight_id":leg.flight_id,"origin":leg.origin,"destination":leg.destination,"scheduled_dep":leg.scheduled_dep.isoformat(),"scheduled_arr":leg.scheduled_arr.isoformat(),"aircraft_type":leg.aircraft_type,"is_deadhead":leg.is_deadhead} for leg in assignment.flight_legs]}
+
+    def _candidate(self,candidate_id,name,tier,assignments,uncovered,elapsed,crews,recommended):
+        crew_by_id={crew.crew_id:crew for crew in crews}; findings=[]
+        for assignment in assignments:
+            findings.extend(v.to_dict() for v in RulesEngine.validate_assignment(crew_by_id[assignment.crew_id],assignment))
+        covered=sum(len([leg for leg in assignment.flight_legs if not leg.is_deadhead]) for assignment in assignments)
+        total=covered+len(uncovered); coverage=covered/total if total else 1
+        return {"id":candidate_id,"name":name,"recommended":recommended,"legal":not findings,"coverage":coverage,"flights_recovered":covered,"total_delay":sum(f["delay"] for f in FLIGHTS if f["id"] in {leg.flight_id for assignment in assignments for leg in assignment.flight_legs}),"max_delay":max((f["delay"] for f in FLIGHTS),default=0),"illegal_crews":len(findings),"aircraft_swaps":0,"gate_conflicts":0,"misconnections":sum(f["connections"] for f in FLIGHTS if f["id"] in {leg.flight_id for leg in uncovered}),"passengers_recovered":sum(f["passengers"] for f in FLIGHTS if f["id"] in {leg.flight_id for assignment in assignments for leg in assignment.flight_legs}),"cost":round(sum((a.duty_end-a.duty_start).total_seconds()/3600 for a in assignments)*100000),"risk":"low" if not uncovered and not findings else "medium","warnings":[v["message"] for v in findings]+[f"{len(uncovered)} unresolved flights" for _ in [0] if uncovered],"changes":[f"Assign {a.crew_id} to {', '.join(l.flight_id for l in a.flight_legs)}" for a in assignments],"tier":tier,"solver_version":"skysolver-demo-2026.08","input_snapshot_id":f"SNP-{uuid.uuid4().hex[:12].upper()}","ruleset_version":RulesEngine.RULESET_VERSION,"state_version":DATA_PROVENANCE["state_version"],"elapsed_s":elapsed,"assignments":[self._serialize_assignment(a) for a in assignments],"crew_snapshot":{crew.crew_id:{"base_hub":crew.base_hub,"current_location":crew.current_location,"last_rest_end":crew.last_rest_end.isoformat() if crew.last_rest_end else None,"qualifications":[q.name for q in crew.qualifications]} for crew in crews},"legality_certificate":{"valid":not findings,"findings":findings,"validated_at":_now()},"joint_feasibility":{"status":"not_evaluated","deployable":False,"findings":[{"code":"AUTHORITATIVE_RESOURCE_DATA_REQUIRED","blocking":True,"message":"Crew complement, aircraft, airport and passenger source records are not connected"}]},"expires_at":(datetime.now(timezone.utc)+timedelta(minutes=10)).isoformat(),"deployment_readiness":"simulation_only"}
+
     def create(self, payload):
         with self._lock:
             rid = f"RCV-{uuid.uuid4().hex[:8].upper()}"
-            recovery = {"id": rid, "disruption_id": payload.get("disruption_id", DISRUPTIONS[0]["id"]), "partition_id": payload.get("partition_id", "DEL"), "objective": payload.get("objective", "balanced"), "status": "awaiting_review", "stage": "candidate_comparison", "tier": "tier2", "progress": 72, "state_version": 1, "selected_candidate_id": None, "validated": False, "deployed": False, "created_at": _now(), "updated_at": _now(), "candidates": deepcopy(CANDIDATES), "acknowledgements": []}
+            crews,legs=self._scenario_inputs(); tier1=solve_tier1(crews,legs,0.5)
+            tier2=solve_tier2_detailed(crews,legs,1.0,tier1.assignments)
+            tier1_id=f"CAN-{uuid.uuid4().hex[:16].upper()}"; tier2_id=f"CAN-{uuid.uuid4().hex[:16].upper()}"
+            tier2_name="Restricted MILP upgrade" if tier2.metadata.upgraded else "Tier 1 incumbent retained — no MILP upgrade"
+            candidates=[self._candidate(tier1_id,"Immediate legal incumbent","tier1",tier1.assignments,tier1.uncovered,tier1.elapsed_s,crews,not tier2.metadata.upgraded),self._candidate(tier2_id,tier2_name,"tier2",tier2.assignments,tier2.uncovered,tier2.metadata.elapsed_s,crews,tier2.metadata.upgraded)]
+            candidates[-1]["optimization_metadata"]={"status":tier2.metadata.status,"solver_name":tier2.metadata.solver_name,"objective_value":tier2.metadata.objective_value,"best_bound":tier2.metadata.best_bound,"optimality_gap":tier2.metadata.optimality_gap,"generated_columns":tier2.metadata.generated_columns,"upgraded":tier2.metadata.upgraded,"message":tier2.metadata.message}
+            tier3_suggestions=[item.to_dict() for item in generate_suggestions(tier2.uncovered,crews,payload.get("partition_id","DEL"),1)]
+            recovery = {"id": rid, "disruption_id": payload.get("disruption_id", DISRUPTIONS[0]["id"]), "partition_id": payload.get("partition_id", "DEL"), "objective": payload.get("objective", "balanced"), "status": "awaiting_review", "stage": "candidate_comparison", "tier": "tier2" if tier2.metadata.upgraded else "tier1", "progress": 100 if not tier2.uncovered else round(max(c["coverage"] for c in candidates)*100), "state_version": 1, "selected_candidate_id": None, "validated": False, "deployed": False, "proposed_by": payload.get("operator_id", "system"), "approvals": [], "created_at": _now(), "updated_at": _now(), "candidates": candidates, "tier3":{"status":"ready" if tier2.uncovered else "standby","unresolved_flight_ids":[f.flight_id for f in tier2.uncovered],"suggestions":tier3_suggestions}, "acknowledgements": [],"provenance":deepcopy(DATA_PROVENANCE),"carrier_writes_enabled":self._carrier_writes_enabled}
             self._recoveries[rid] = recovery
-            self._record(rid, "recovery_created", "operator", "Tiered solve completed with 3 candidates")
-            return self.envelope("awaiting_review", 1, recovery=deepcopy(recovery))
+            self._record(rid, "recovery_created", "system", f"Executable synthetic solve produced {len(candidates)} candidates")
+            self._persist()
+            return self.envelope("awaiting_review", 1, correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 
     def get(self, recovery_id):
         if recovery_id not in self._recoveries:
@@ -126,6 +235,51 @@ class RecoveryStore:
 
     def candidates(self, recovery_id):
         return self.get(recovery_id)["candidates"]
+
+    def tier3_suggestions(self, recovery_id, offset=0, limit=50):
+        recovery=self.get(recovery_id); suggestions=recovery.get("tier3",{}).get("suggestions",[])
+        offset=max(0,int(offset)); limit=min(200,max(1,int(limit)))
+        return {"items":deepcopy(suggestions[offset:offset+limit]),"offset":offset,"limit":limit,"total":len(suggestions),"state_version":recovery["state_version"],"status":recovery.get("tier3",{}).get("status","standby")}
+
+    def decide_tier3_suggestion(self,recovery_id,suggestion_id,payload):
+        with self._lock:
+            recovery=self._recoveries.get(recovery_id)
+            if not recovery: raise WorkflowError(404,"not_found","Recovery not found")
+            self._version(recovery,payload)
+            suggestion=next((item for item in recovery.get("tier3",{}).get("suggestions",[]) if item["suggestion_id"]==suggestion_id),None)
+            if not suggestion: raise WorkflowError(404,"suggestion_not_found","Tier 3 suggestion not found")
+            action=payload.get("action"); reason=str(payload.get("reason","")).strip()
+            if action in {"reject","hold","edit"} and not reason:
+                raise WorkflowError(422,"reason_required",f"Tier 3 {action} requires a reason")
+            if action=="request_more_options":
+                crews,legs=self._scenario_inputs(); unresolved_ids=set(recovery.get("tier3",{}).get("unresolved_flight_ids",[]))
+                generated=generate_suggestions([leg for leg in legs if leg.flight_id in unresolved_ids],crews,recovery["partition_id"],recovery["state_version"]+1)
+                known={item["suggestion_id"] for item in recovery["tier3"]["suggestions"]}
+                recovery["tier3"]["suggestions"].extend(item.to_dict() for item in generated if item.suggestion_id not in known)
+            elif action=="edit":
+                crew_id=str(payload.get("crew_id") or suggestion["crew_id"]); flight_id=str(payload.get("flight_id") or suggestion["proposed_flight_ids"][0])
+                crews,legs=self._scenario_inputs(); crew=next((item for item in crews if item.crew_id==crew_id),None); leg=next((item for item in legs if item.flight_id==flight_id),None)
+                if not crew or not leg: raise WorkflowError(422,"edit_reference_invalid","Edited crew and flight must exist in the recovery snapshot")
+                edited=generate_suggestions([leg],[crew],recovery["partition_id"],recovery["state_version"]+1)
+                if not edited: raise WorkflowError(422,"illegal_suggestion_edit","Edited assignment failed legality validation")
+                replacement=edited[0].to_dict(); replacement["reason"]=reason; replacement["supersedes_suggestion_id"]=suggestion_id
+                suggestion.update({"status":SuggestionStatus.SUPERSEDED.value,"superseded_by_suggestion_id":replacement["suggestion_id"],"decision_reason":reason})
+                recovery["tier3"]["suggestions"].append(replacement)
+            else:
+                status={"approve":SuggestionStatus.APPROVED.value,"reject":SuggestionStatus.REJECTED.value,"hold":SuggestionStatus.HELD.value}.get(action)
+                if not status: raise WorkflowError(422,"action_invalid","Tier 3 action must be approve, reject, hold, edit or request_more_options")
+                suggestion.update({"status":status,"approved_by":payload.get("operator_id"),"approved_at":_now(),"decision_reason":reason})
+                if action=="approve":
+                    crews,legs=self._scenario_inputs(); crew_ids={suggestion["crew_id"]}; flight_ids=set(suggestion["proposed_flight_ids"])
+                    selected_crews=[item for item in crews if item.crew_id in crew_ids]; selected_legs=[item for item in legs if item.flight_id in flight_ids]
+                    crew=selected_crews[0]; assignment=Assignment(crew.crew_id,selected_legs,min(x.scheduled_dep for x in selected_legs),max(x.scheduled_arr for x in selected_legs))
+                    unresolved_ids=set(recovery.get("tier3",{}).get("unresolved_flight_ids",[]))-flight_ids
+                    candidate=self._candidate(f"CAN-{uuid.uuid4().hex[:16].upper()}","Scheduler-accepted Tier 3 option","tier3",[assignment],[item for item in legs if item.flight_id in unresolved_ids],0.0,crews,False)
+                    candidate["source_suggestion_id"]=suggestion_id; recovery["candidates"].append(candidate)
+            recovery["state_version"]+=1; recovery["updated_at"]=_now()
+            self._record(recovery_id,f"tier3_suggestion_{action}",payload.get("operator_id","scheduler-demo"),reason or suggestion_id)
+            self._persist()
+            return self.envelope("tier3_updated",recovery["state_version"],correlation_id=payload.get("correlation_id"),causation_id=payload.get("causation_id"),recovery=deepcopy(recovery))
 
     def _version(self, recovery, payload):
         expected = payload.get("state_version")
@@ -146,9 +300,32 @@ class RecoveryStore:
                 raise WorkflowError(422, "illegal_plan", candidate["warnings"][0])
             if action == "override" and not str(payload.get("reason", "")).strip():
                 raise WorkflowError(422, "reason_required", "Human override requires a reason")
-            recovery.update({"selected_candidate_id": candidate["id"] if action != "reject" else None, "status": "validating" if action != "reject" else "awaiting_review", "stage": "rule_validation" if action != "reject" else "candidate_comparison", "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            if action != "reject":
+                resources = []
+                for assignment in candidate["assignments"]:
+                    resources.append(f"crew:{assignment['crew_id']}")
+                    for leg in assignment["flight_legs"]:
+                        flight = next(item for item in FLIGHTS if item["id"] == leg["flight_id"])
+                        resources.extend([f"flight:{flight['id']}", f"aircraft:{flight['aircraft']['registration']}", f"gate:{flight['origin']}:{flight['proposed_gate']}", f"passenger-inventory:{flight['id']}"])
+                try:
+                    hold = self._hold_registry.acquire(tenant_id="synthetic-airline", recovery_id=recovery_id,
+                        candidate_id=candidate["id"], candidate_version=candidate["state_version"], resources=resources,
+                        owner=payload.get("operator_id", "scheduler-demo"), ttl_seconds=600)
+                except HoldConflict as exc:
+                    raise WorkflowError(409 if exc.code == "resource_conflict" else 422, exc.code, f"{exc}: {', '.join(exc.resources)}") from exc
+                candidate["resource_hold"] = hold.to_dict()
+            elif candidate.get("resource_hold"):
+                try:
+                    self._hold_registry.release_for_recovery(candidate["resource_hold"]["hold_id"], recovery_id)
+                except HoldConflict:
+                    pass
+                candidate["resource_hold"] = None
+            next_status = "held" if action == "hold" else ("validating" if action != "reject" else "awaiting_review")
+            next_stage = "candidate_held" if action == "hold" else ("rule_validation" if action != "reject" else "candidate_comparison")
+            recovery.update({"selected_candidate_id": candidate["id"] if action != "reject" else None, "status": next_status, "stage": next_stage, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
             self._record(recovery_id, f"candidate_{action}", payload.get("operator_id", "ops-controller"), payload.get("reason") or candidate["name"])
-            return self.envelope(recovery["status"], recovery["state_version"], recovery=deepcopy(recovery))
+            self._persist()
+            return self.envelope(recovery["status"], recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 
     def validate(self, recovery_id, payload):
         with self._lock:
@@ -159,14 +336,59 @@ class RecoveryStore:
             if not recovery["selected_candidate_id"]:
                 raise WorkflowError(422, "candidate_required", "Select a candidate before validation")
             candidate = next(c for c in recovery["candidates"] if c["id"] == recovery["selected_candidate_id"])
-            if not candidate["legal"]:
-                raise WorkflowError(422, "illegal_plan", candidate["warnings"][0])
-            recovery.update({"validated": True, "status": "ready_to_deploy", "stage": "validated", "progress": 90, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
-            self._record(recovery_id, "rules_validated", payload.get("operator_id", "ops-controller"), "144 hard constraints passed")
-            return self.envelope("ready_to_deploy", recovery["state_version"], recovery=deepcopy(recovery))
+            hold = candidate.get("resource_hold")
+            if not hold:
+                raise WorkflowError(422, "resource_hold_required", "Candidate resources must be held before validation")
+            try:
+                self._hold_registry.assert_current(hold["hold_id"], candidate["id"], candidate["state_version"])
+            except HoldConflict as exc:
+                raise WorkflowError(409, exc.code, str(exc)) from exc
+            crew_snapshot=candidate["crew_snapshot"]; findings=[]
+            for stored in candidate["assignments"]:
+                profile=crew_snapshot[stored["crew_id"]]
+                crew=CrewMember(stored["crew_id"],profile["base_hub"],{Qualification[name] for name in profile["qualifications"]},current_location=profile["current_location"],last_rest_end=datetime.fromisoformat(profile["last_rest_end"]) if profile["last_rest_end"] else None)
+                legs=[FlightLeg(item["flight_id"],item["origin"],item["destination"],datetime.fromisoformat(item["scheduled_dep"]),datetime.fromisoformat(item["scheduled_arr"]),item["aircraft_type"],item["is_deadhead"]) for item in stored["flight_legs"]]
+                assignment=Assignment(stored["crew_id"],legs,datetime.fromisoformat(stored["duty_start"]),datetime.fromisoformat(stored["duty_end"]))
+                findings.extend(v.to_dict() for v in RulesEngine.validate_assignment(crew,assignment))
+            if findings:
+                raise WorkflowError(422, "illegal_plan", findings[0]["message"])
+            certificate_candidate={"assignments":candidate["assignments"],"input_snapshot_id":candidate["input_snapshot_id"],"candidate_id":candidate["id"],"state_version":candidate["state_version"]}
+            rules_package={"ruleset_version":RulesEngine.RULESET_VERSION,"certification":"dgca-oriented-demo-not-certified"}
+            signed_certificate=self._certificate_issuer.issue(tenant_id="synthetic-airline",recovery_id=recovery_id,candidate_id=candidate["id"],input_snapshot=candidate["crew_snapshot"],candidate=certificate_candidate,rules_package=rules_package,ruleset_version=RulesEngine.RULESET_VERSION,state_version=recovery["state_version"],findings=[])
+            candidate["legality_certificate"]={**signed_certificate.to_dict(),"findings":[],"independent":False,"warning":"Demo in-process validation; not an independently deployed certified service"}
+            recovery.update({"validated": True, "status": "awaiting_joint_feasibility", "stage": "demo_legality_validated", "progress": 90, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            self._record(recovery_id, "demo_rules_validated", payload.get("operator_id", "demo-operator"), f"{len(candidate['assignments'])} assignments validated in the non-certified demo path")
+            self._persist()
+            return self.envelope("awaiting_joint_feasibility", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
+
+    def approve(self, recovery_id, payload):
+        with self._lock:
+            recovery = self._recoveries.get(recovery_id)
+            if not recovery:
+                raise WorkflowError(404, "not_found", "Recovery not found")
+            self._version(recovery, payload)
+            if not recovery["validated"]:
+                raise WorkflowError(422, "validation_required", "Demo legality validation must complete before approval")
+            approver = str(payload.get("operator_id", ""))
+            if not approver:
+                raise WorkflowError(401, "identity_required", "Approval requires a server-derived identity")
+            if payload.get("operator_role") != "duty-manager":
+                raise WorkflowError(403, "approval_role_required", "Only a duty manager may approve a recovery plan")
+            if approver == recovery.get("proposed_by"):
+                raise WorkflowError(403, "segregation_of_duties", "The proposer cannot approve the same recovery plan")
+            approval = {"id": str(uuid.uuid4()), "actor": approver, "role": payload.get("operator_role"), "reason": str(payload.get("reason", "")).strip(), "timestamp": _now(), "candidate_id": recovery["selected_candidate_id"], "state_version": recovery["state_version"]}
+            if not approval["reason"]:
+                raise WorkflowError(422, "reason_required", "Approval requires a reason")
+            recovery["approvals"].append(approval)
+            recovery.update({"status": "approved", "stage": "awaiting_deployment", "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            self._record(recovery_id, "plan_approved", approver, approval["reason"])
+            self._persist()
+            return self.envelope("approved", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 
     def deploy(self, recovery_id, payload, idempotency_key):
         with self._lock:
+            if not self._carrier_writes_enabled:
+                raise WorkflowError(403, "carrier_writes_disabled", "Carrier publishing is disabled until shadow-pilot safety gates are approved")
             if idempotency_key and idempotency_key in self._idempotency:
                 return deepcopy(self._idempotency[idempotency_key])
             recovery = self._recoveries.get(recovery_id)
@@ -174,14 +396,89 @@ class RecoveryStore:
                 raise WorkflowError(404, "not_found", "Recovery not found")
             self._version(recovery, payload)
             if not recovery["validated"]:
-                raise WorkflowError(422, "validation_required", "Plan must pass independent validation")
-            acknowledgements = [{"resource": "crew", "status": "acknowledged"}, {"resource": "aircraft", "status": "acknowledged"}, {"resource": "gates", "status": "acknowledged"}, {"resource": "passengers", "status": "acknowledged"}]
-            recovery.update({"deployed": True, "status": "deployed", "stage": "recovered", "progress": 100, "acknowledgements": acknowledgements, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
-            self._record(recovery_id, "plan_deployed", payload.get("operator_id", "ops-controller"), recovery["selected_candidate_id"])
-            result = self.envelope("deployed", recovery["state_version"], recovery=deepcopy(recovery), acknowledgements=acknowledgements)
+                raise WorkflowError(422, "validation_required", "Plan must pass legality validation")
+            if not recovery.get("approvals"):
+                raise WorkflowError(422, "approval_required", "A duty-manager approval is required before deployment")
+            candidate = next(item for item in recovery["candidates"] if item["id"] == recovery["selected_candidate_id"])
+            if not candidate.get("joint_feasibility", {}).get("deployable", False):
+                raise WorkflowError(422, "joint_feasibility_required", "Authoritative crew, aircraft, airport and passenger feasibility must pass before deployment")
+            certificate_data = candidate.get("legality_certificate") or {}
+            try:
+                certificate = LegalityCertificate(**{key: value for key, value in certificate_data.items() if key in LegalityCertificate.__dataclass_fields__})
+            except TypeError as exc:
+                raise WorkflowError(422, "legality_certificate_required", "Candidate has no complete legality certificate") from exc
+            certificate_candidate={"assignments":candidate["assignments"],"input_snapshot_id":candidate["input_snapshot_id"],"candidate_id":candidate["id"],"state_version":candidate["state_version"]}
+            rules_package={"ruleset_version":RulesEngine.RULESET_VERSION,"certification":"dgca-oriented-demo-not-certified"}
+            if not self._certificate_issuer.verify(certificate,input_snapshot=candidate["crew_snapshot"],candidate=certificate_candidate,rules_package=rules_package):
+                raise WorkflowError(422, "legality_certificate_invalid", "Candidate legality certificate does not match current artifacts")
+            resources = []
+            for assignment in candidate["assignments"]:
+                resources.append({"resource_type": "crew", "resource_id": assignment["crew_id"], "target_system": "crew-operations-adapter", "action": "publish_assignment", "reversible": True})
+            for flight_id in {leg["flight_id"] for assignment in candidate["assignments"] for leg in assignment["flight_legs"]}:
+                flight = next(item for item in FLIGHTS if item["id"] == flight_id)
+                resources.extend([
+                    {"resource_type": "aircraft", "resource_id": flight["aircraft"]["registration"], "target_system": "aircraft-operations-adapter", "action": "publish_rotation", "reversible": True},
+                    {"resource_type": "gate", "resource_id": f"{flight['origin']}:{flight['proposed_gate']}", "target_system": "aodb-adapter", "action": "publish_gate", "reversible": True},
+                    {"resource_type": "passenger", "resource_id": flight_id, "target_system": "passenger-service-adapter", "action": "publish_recovery", "reversible": False},
+                ])
+            deployment = self._deployment_registry.create(tenant_id="synthetic-airline", recovery_id=recovery_id,
+                candidate_id=candidate["id"], candidate_version=candidate["state_version"], idempotency_key=idempotency_key,
+                correlation_id=str(payload.get("correlation_id") or uuid.uuid4()), requested_by=payload.get("operator_id", "deployment-controller"), resources=resources)
+            acknowledgements = [{"resource": f"{item.resource_type}:{item.resource_id}", "command_id": item.command_id, "status": item.status.value} for item in deployment.commands]
+            recovery.update({"deployed": False, "deployment_id": deployment.deployment_id, "status": "deploying", "stage": "awaiting_acknowledgements", "progress": 95, "acknowledgements": acknowledgements, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            self._record(recovery_id, "deployment_queued", payload.get("operator_id", "deployment-controller"), deployment.deployment_id)
+            result = self.envelope("deploying", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery), deployment=deployment.to_dict(), acknowledgements=acknowledgements)
             if idempotency_key:
                 self._idempotency[idempotency_key] = deepcopy(result)
+            self._persist()
             return result
+
+    def deployment(self, deployment_id):
+        try:
+            return deepcopy(self._deployment_registry.get(deployment_id).to_dict())
+        except DeploymentConflict as exc:
+            raise WorkflowError(404, exc.code, str(exc)) from exc
+
+    def send_deployment_command(self, deployment_id, command_id, expected_version, adapter_reference):
+        try:
+            deployment = self._deployment_registry.mark_sent(deployment_id, command_id, expected_version, adapter_reference)
+            return deepcopy(deployment.to_dict())
+        except DeploymentConflict as exc:
+            raise WorkflowError(409 if exc.code == "stale_state" else 422, exc.code, str(exc)) from exc
+
+    def acknowledge_deployment_command(self, deployment_id, command_id, expected_version, accepted, adapter_reference, failure_code=None, failure_detail=None):
+        try:
+            deployment = self._deployment_registry.acknowledge(deployment_id, command_id, expected_version, accepted=accepted, adapter_reference=adapter_reference, failure_code=failure_code, failure_detail=failure_detail)
+        except DeploymentConflict as exc:
+            raise WorkflowError(409 if exc.code == "stale_state" else 422, exc.code, str(exc)) from exc
+        recovery = self._recoveries[deployment.recovery_id]
+        recovery["acknowledgements"] = [{"resource": f"{item.resource_type}:{item.resource_id}", "command_id": item.command_id, "status": item.status.value} for item in deployment.commands]
+        if deployment.status is DeploymentStatus.COMPLETE:
+            recovery.update({"deployed": True, "status": "deployed", "stage": "recovered", "progress": 100})
+            self._record(recovery["id"], "deployment_completed", "adapter-reconciliation", deployment.deployment_id)
+        elif deployment.status in {DeploymentStatus.PARTIAL, DeploymentStatus.FAILED}:
+            recovery.update({"deployed": False, "status": "partially_deployed" if deployment.status is DeploymentStatus.PARTIAL else "deployment_failed", "stage": "reconciliation_required"})
+        recovery["updated_at"] = _now(); self._persist()
+        return deepcopy(deployment.to_dict())
+
+    def retry_deployment_command(self, deployment_id, command_id, expected_version):
+        try:
+            deployment = self._deployment_registry.retry(deployment_id, command_id, expected_version)
+            return deepcopy(deployment.to_dict())
+        except DeploymentConflict as exc:
+            raise WorkflowError(409 if exc.code == "stale_state" else 422, exc.code, str(exc)) from exc
+
+    def compensate_deployment(self, deployment_id, expected_version, operator_id, reason):
+        try:
+            deployment = self._deployment_registry.compensate(deployment_id, expected_version)
+        except DeploymentConflict as exc:
+            raise WorkflowError(409 if exc.code == "stale_state" else 422, exc.code, str(exc)) from exc
+        recovery = self._recoveries[deployment.recovery_id]
+        requires_new = deployment.status is DeploymentStatus.REQUIRES_NEW_RECOVERY
+        recovery.update({"deployed": True, "validated": False, "status": "requires_new_recovery" if requires_new else "compensating", "stage": "irreversible_action" if requires_new else "compensation_pending", "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+        self._record(recovery["id"], "compensation_requested", operator_id, reason)
+        self._persist()
+        return self.envelope(recovery["status"], recovery["state_version"], recovery=deepcopy(recovery), deployment=deployment.to_dict())
 
     def rollback(self, recovery_id, payload):
         with self._lock:
@@ -191,9 +488,15 @@ class RecoveryStore:
             self._version(recovery, payload)
             if not recovery["deployed"]:
                 raise WorkflowError(422, "not_deployed", "Only deployed plans can be rolled back")
-            recovery.update({"deployed": False, "validated": False, "status": "awaiting_review", "stage": "candidate_comparison", "progress": 72, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
-            self._record(recovery_id, "deployment_rolled_back", payload.get("operator_id", "ops-controller"), payload.get("reason", "Operator rollback"))
-            return self.envelope("rolled_back", recovery["state_version"], recovery=deepcopy(recovery))
+            try:
+                deployment = self._deployment_registry.compensate(recovery["deployment_id"], self._deployment_registry.get(recovery["deployment_id"]).state_version)
+            except DeploymentConflict as exc:
+                raise WorkflowError(422, exc.code, str(exc)) from exc
+            requires_new = deployment.status is DeploymentStatus.REQUIRES_NEW_RECOVERY
+            recovery.update({"deployed": True, "validated": False, "status": "requires_new_recovery" if requires_new else "compensating", "stage": "irreversible_action" if requires_new else "compensation_pending", "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            self._record(recovery_id, "compensation_requested", payload.get("operator_id", "deployment-controller"), payload.get("reason", "Operational compensation"))
+            self._persist()
+            return self.envelope(recovery["status"], recovery["state_version"], recovery=deepcopy(recovery), deployment=deployment.to_dict())
 
     def audit(self):
         return deepcopy(list(reversed(self._audit)))
@@ -202,7 +505,7 @@ class RecoveryStore:
         return deepcopy(self._audit[-50:])
 
     def _record(self, recovery_id, action, operator, detail):
-        self._audit.append({"id": str(uuid.uuid4()), "recovery_id": recovery_id, "action": action, "operator": operator, "detail": detail, "timestamp": _now(), "ruleset_version": "synthetic-far117-v2"})
+        self._audit.append({"id": str(uuid.uuid4()), "recovery_id": recovery_id, "action": action, "operator": operator, "detail": detail, "timestamp": _now(), "ruleset_version": RulesEngine.RULESET_VERSION})
 
 
-recovery_store = RecoveryStore()
+recovery_store = RecoveryStore(os.environ.get("SKYSOLVER_RECOVERY_STATE", ".sky_recovery_state.json"))

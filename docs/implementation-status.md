@@ -1,50 +1,48 @@
 # SkySolver implementation status
 
-Last audited: 2026-07-31  
+Last audited: 2026-08-01
+Operational authority: disabled
 Data classification: realistic synthetic demonstration data only
 
-## Executive assessment
+## Current verdict
 
-SkySolver is now an integrated disruption-recovery reference implementation: legal-first crew recovery, regional state streams, tiered degradation, durable human decisions, passenger prototypes, versioned operations APIs, health probes, autoscaling manifests, chaos replay, and an operational dashboard all exist in one repository. It remains a prototype—not a certified airline production system.
+SkySolver is a production-oriented reference implementation and contained OCC
+demonstration. It is not certified airline software and has no carrier write
+authority. The UI, API and release gates must continue to say this plainly.
 
-## Implemented and verified
+## Implemented in this repository
 
-| Capability | Runtime behavior | Boundary |
+| Area | Evidence | Current boundary |
 |---|---|---|
-| Canonical contracts | Structured rule violations, recovery tiers, audit/correlation metadata | Legacy passenger types still need consolidation |
-| Legality layer | Duty/flight/rest, qualifications, unknown types, positioning, continuity, connection/overlap, deadhead safeguards | Synthetic FAR 117-style subset; requires regulatory review and complete cumulative/consecutive rules |
-| Tier 1 | Bounded legal greedy construction with local improvement and explicit uncovered work | Improvement neighborhood remains intentionally lightweight |
-| Tier 2 | Warm-started legal multi-leg column generation and time-boxed set-cover selection | Master is a deterministic combinatorial heuristic, not a certified MILP/CP-SAT optimizer |
-| Tier orchestration | Legal Tier 1 incumbent, Tier 2 upgrade, explicit Tier 3 escalation | Runs synchronously inside the reference worker |
-| Tier 3 | Legality-gated ranked suggestions and SQLite decision ledger | Approved changes are audited but not sent to a carrier schedule system |
-| Event state | Append-only streams, deterministic replay, idempotency, sequence numbers, optimistic concurrency, correlation IDs | In-memory/JSON reference adapter; production needs a transactional durable broker/store |
-| Partitioning | Hub-local solving and cross-partition move reconciliation | Reconciliation validation remains simplified |
-| Passenger recovery | Synthetic routing, priorities, capacity and compensation examples | Duplicate legacy passenger modules remain; no atomic multi-resource commit |
-| Operations API | Versioned disruptions, flights, recoveries, candidates, decisions, validation, deployment, rollback, audit and SSE contracts with optimistic versions | Custom HTTP reference server and process-local workflow store, not a hardened API gateway |
-| Dashboard | React/TypeScript viewport-height OCC with digital twin, dependency graph, plan comparison, network impact, solver timeline, audit and command palette | Airport scenario and metrics are explicitly synthetic demo data |
-| Elastic operations | Worker health server, Kubernetes resources/probes and KEDA example | Queue consumer remains an adapter seam; Pulsar is not active in this build |
-| Verification | Unit/integration suite, compilation, two worker smokes, orchestration/state CI gates | Elliott harness is synthetic single-process replay, not a distributed carrier-scale proof |
+| Truthful OCC UI | Persistent synthetic banner, India routes, dedicated Tier pages, Tier 3 queue, Data Health and Deployment gates | No carrier feed |
+| API safety | FastAPI/OpenAPI, signed demo sessions, OIDC claim verifier, RBAC, MFA step-up, optimistic versions, idempotency and correlation | Airline IdP not configured |
+| Canonical state | Versioned/provenanced airline records and temporal context | Vendor mappings remain adapter-specific |
+| Ingestion and adapters | Contract negotiation/validation, minimization, duplicate/out-of-order handling, cursor, DLQ, reconciliation, circuit breaking, PII-safe telemetry and signed write-command interlock | Canonical SDK only; no vendor implementation or carrier credentials |
+| Data health | Freshness, DLQ, drift, circuit and authority interlocks | Fixture intentionally blocks deployment |
+| Tier 1 | Legal-first regional incumbent and explicit partial coverage | Demo DGCA profile only |
+| Tier 2 | Restricted-master binary MILP, legal columns and warm start; immutable upgrade policy rejects stale, illegal, foreign-snapshot/ruleset, coverage-regressing or operationally insignificant replacements | Not branch-and-price; no certified gap claim |
+| Tier 3 | Uncapped legal-option generation, stable IDs, ranking, authenticated accept/reject/hold/edit, revalidation and candidate creation | Depends on synthetic snapshot |
+| Rules | DGCA-oriented assignment checks plus package-driven cumulative flight/duty, credential validity, acclimatization/night, standby, split-duty, augmentation, complement and immigration hooks; signed effective-dated governance and four-eyes activation | Bundled limits are synthetic defaults; regulatory/operator corpus remains incomplete and uncertified |
+| Validation | Separately deployable package-bound service with calculation findings; certificate-eligible execution fails closed without a configured operational profile and complete per-crew evidence | Certified packages, authoritative history and external approvals are not supplied |
+| Event state | Atomic workflow receipts, optimistic event/outbox/snapshot transaction, deterministic replay and MSK projection; durable transition service enforces candidate selection, certified validation, joint feasibility/holds, approval and deployment authorization | Production API projection adapter and live AWS dependencies not activated |
+| Cross-partition recovery | Reservation/validation/commit/dual-ACK/compensation saga | No live station capacity systems |
+| Deployment | Resource commands, restart-safe Aurora claims, per-target idempotency, ACK/NACK/timeout, required-resource completion calculation, partial state, retry and compensation distinctions | Carrier vendor implementations and writes disabled |
+| Immutable evidence | KMS-encrypted S3 versioned COMPLIANCE Object Lock writer, integrity verification and Aurora candidate index binding snapshot/rules/objective/state/solver/expiry/content hash | AWS bucket not provisioned here |
+| AWS platform | EKS, Aurora, MSK, Redis, S3, KMS, ECR, Cognito/SAML, ALB/WAF/DNS, backups and Prometheus; production startup requires authoritative dependency probes and readiness fails on Aurora/MSK/validation/artifact/adapter outage | Terraform not applied and no live AWS dependency evidence exists |
+| Release governance | Signed evidence gate for shadow/controlled production | Required evidence has not been supplied |
+| Replay | Evidence gate rejects toy volume, simulated passenger work and missing resilience dimensions | No certified 50,100-flight distributed run |
 
-## Phase mapping
+## External exit gates still required
 
-1. Architecture and honest maturity documentation: complete for prototype scope.
-2. Tests-first legality engine: complete for the documented synthetic ruleset.
-3. Tier 1 solver: complete for prototype scope.
-4. Tier 2 upgrade path: integrated; mathematical optimizer remains the largest algorithmic gap.
-5. Tier 3 interface: usable API and durable decision history; deployment adapter outstanding.
-6. Event state and partition reconciliation: core concurrency/idempotency complete; production storage adapter outstanding.
-7. Chaos/replay: present with explicit synthetic limitations.
-8. Deployment: containers, worker probes, health API and autoscaling examples present.
-9. Product UI: disruption-centric dashboard and versioned data contract present.
+1. Supply and validate real carrier read adapters and airline identity federation.
+2. Complete and obtain DGCA, operator and labour-agreement approval for rules packages.
+3. Activate the Aurora-backed API workflow store and MSK solver-job consumers.
+4. Implement carrier-specific crew, aircraft, AODB and passenger publication adapters.
+5. Run security assessment, penetration test, accessibility acceptance and SBOM/signature gates.
+6. Execute production-shaped load, broker/database failure and regional DR exercises.
+7. Complete read-only shadow operations and reconciliation against incumbent airline processes.
+8. Obtain safety-board, security and operational acceptance evidence.
+9. Enable one controlled action type only through a separately approved production overlay.
 
-## Production blockers
-
-- Independent FAR 117/company-contract certification and exhaustive boundary/property tests.
-- A genuine MILP/CP-SAT or branch-and-price Tier 2 with measured optimality gaps.
-- Durable queue consumption, retries/dead-lettering, transactional projections and backpressure.
-- Atomic crew/aircraft/gate/passenger reservation and carrier-system deployment adapters.
-- SSO, RBAC, CSRF/session controls, managed secrets, tenant isolation and immutable external audit storage.
-- Distributed Elliott-scale load/chaos evidence against the stated SLA.
-- Production data contracts, privacy controls, disaster recovery, runbooks and formal release governance.
-
-No benchmark in this repository should be represented as real-carrier performance or regulatory certification.
+No repository test, mock, synthetic replay or Terraform file is evidence that
+these external gates passed.

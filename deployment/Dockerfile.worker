@@ -17,5 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY . .
 
+RUN groupadd --gid 10001 skysolver && useradd --uid 10001 --gid skysolver --no-create-home skysolver \
+    && chown -R 10001:10001 /app
+
+USER 10001:10001
+
 # Worker entry point - consumes from queue, solves partitions, publishes results
 CMD ["python", "-m", "deployment.worker"]

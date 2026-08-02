@@ -1,227 +1,161 @@
-# SkySolver v2 Architecture
+# SkySolver production architecture
 
-> **Target architecture, not a statement of current deployment.** The verified
-> Python reference implementation and its remaining gaps are tracked in
-> `docs/implementation-status.md`. Rust, Pulsar, Flink and Drools below are
-> evaluated production targets unless explicitly marked live.
+> Target architecture with an explicit current-state boundary. Nothing in this
+> document grants operational authority. The checked-in application remains a
+> synthetic, non-certified recovery demonstrator with carrier writes disabled.
 
-## 1. Overview
+## Safety boundary
 
-SkySolver v2 is a resilient crew rescheduling engine designed to avoid the catastrophic failure modes of its predecessor during high-stress events. The system employs **regional partitioning**, **tiered solving with graceful degradation**, **event-sourced state**, and **elastic compute** to ensure continuous operation under load.
+The system can enter controlled production only after authoritative airline
+adapters, certified operator rules, independent validation, security approval,
+shadow-mode acceptance, resilience evidence and two-person deployment controls
+have passed their release gates. A UI action is never evidence of publication.
 
-**Key Design Principle:** *Degrade gracefully, never fail hard.*
+Current executable capabilities:
 
----
+- Python Tier 1 and heuristic Tier 2 recovery over Indian synthetic fixtures.
+- DGCA-oriented demo constraints; not a complete or certified DGCA ruleset.
+- Human-review workflow, signed demo sessions and centralized role policy.
+- Typed FastAPI/OpenAPI contracts with version and idempotency requirements.
+- Local JSON recovery state and audit history; mutable and non-authoritative.
+- React scheduler interface and per-flight Indian route fixtures.
 
-## 2. Regional Partitioning Strategy
+Not currently operational:
 
-### 2.1 Partition Definition
-The crew/aircraft network is decomposed by **hub-based regions**:
-- **Primary hubs:** Major airports (e.g., DEN, ORD, ATL, LAX, MIA, DFW, EWR)
-- **Secondary hubs:** Significant airports with sufficient crew base
-- **Regional clusters:** Grouping of smaller airports served by a primary hub
+- Carrier integrations or source-system acknowledgements.
+- Aurora/MSK/Redis/S3 runtime repositories.
+- MILP/column generation or an independently certified rules execution path.
+- Cognito federation, airline MFA, step-up authentication or live IdP groups.
+- Immutable audit, production telemetry, certified scale, DR, or carrier writes.
 
-Each partition contains:
-- Flights originating/terminating within the region
-- Crew members whose base is in that region
-- Aircraft assigned to that region
+## Target runtime
 
-### 2.2 Partition Isolation
-- **Compute isolation:** Each partition runs in its own Kubernetes namespace with resource quotas
-- **State isolation:** Event streams are partitioned by hub ID; no cross-partition reads during solve
-- **Failure containment:** A partition can degrade to Tier 3 without blocking others
-
-### 2.3 Cross-Partition Reconciliation
-For crews that legally need to move between partitions (e.g., deadheading to another hub):
-
-1. **Legal Move Queue:** When a crew member is assigned to a flight outside their partition, a `LEGAL_MOVE_REQUEST` event is emitted
-2. **Reconciliation Pass:** Post-solve, a lightweight reconciler:
-   - Validates the move is duty-time compliant across partitions
-   - Updates crew location in target partition's event stream
-   - Emits `LEGAL_MOVE_COMPLETED` event
-3. **Grace Period:** Moves can be "in flight" for up to 6 hours before reconciliation is required
-
-**Failure Mode:** If cross-partition moves exceed 15% of total crew, system alerts but continues — the move is simply deferred to the next cycle.
-
----
-
-## 3. Tiered Solving Design
-
-### 3.1 Tier 1: Fast Heuristic Solver (≤ 1 second per partition)
-
-**Algorithm:** Large Neighborhood Search (LNS) with greedy destruction/reconstruction
-- **Destruction:** Remove 10-20% of assignments (weighted random, favoring high-disruption flights)
-- **Reconstruction:** Greedy insertion with hard legality checks
-- **Local search:** 2-opt swaps for duty-time minimization
-
-**Guarantees:**
-- All assignments satisfy FAR 117 duty-time, rest periods, and qualifications
-- No crew deadheading loops (checked by rules engine)
-- Solution quality: typically 85-95% of optimal cost
-
-**Implementation:** Single-threaded Rust worker with async event reads
-
-### 3.2 Tier 2: Near-Optimal Optimizer (≤ 5 minutes per partition)
-
-**Algorithm:** Column Generation with Branch-and-Price
-- **Master problem:** Set covering for crew pairings
-- **Subproblem:** Shortest path with resource constraints (duty-time)
-- **Initial columns:** Generated from Tier 1 solution as warm start
-
-**Time Management:**
-- Solves in parallel with Tier 1
-- If converged before 5 minutes: upgrades Tier 1 solution
-- If not: Tier 1 solution is used (never blocks)
-
-**Failure Mode:** Solver timeout → fall back to Tier 1
-
-### 3.3 Tier 3: Human-Assisted Mode
-
-**Trigger:** Both Tier 1 and Tier 2 exceed time budgets
-
-**Output:** Ranked list of AI-suggested reassignments
-- **Format:** JSON API + minimal web UI (React + Tailwind)
-- **Ranking criteria:**
-  1. Legal compliance (hard filter)
-  2. Duty-time cost (minimize disruption)
-  3. Crew seniority fairness
-  4. Passenger impact (gate changes, connections)
-
-**UI Features:**
-- Toggle: "Auto-approve all" (for routine disruptions)
-- Review queue with acceptance/rejection per crew
-- "Why this suggestion?" explainer showing constraint satisfaction
-
-**SLA:** Must produce suggestions within 30 seconds of trigger
-
----
-
-## 4. Data Model
-
-### 4.1 Event-Sourced Crew State
-
-```
-Events (append-only, immutable):
-├── CREW_MEMBER_CREATED {crew_id, name, base_hub, qualifications}
-├── FLIGHT_ASSIGNED {crew_id, flight_id, phase, timestamp}
-├── DUTY_START {crew_id, duty_id, start_time}
-├── DUTY_END {crew_id, duty_id, end_time}
-├── REST_PERIOD_START {crew_id, rest_id, start_time}
-├── QUALIFICATION_ADDED {crew_id, qualification, effective_date}
-├── LEGAL_MOVE_REQUEST {crew_id, from_partition, to_partition, reason}
-└── SCHEDULE_REJECTED {crew_id, flight_id, reason}
+```mermaid
+flowchart LR
+  U["Airline operator"] --> IDP["Airline IdP"]
+  IDP --> COG["Cognito federation"]
+  COG --> ALB["WAF + private ALB"]
+  ALB --> API["Recovery API"]
+  API --> AUR["Aurora projections + outbox"]
+  API --> REDIS["Redis holds and coordination"]
+  AUR --> OUT["Outbox publisher"]
+  OUT --> MSK["MSK operational events"]
+  MSK --> T1["Regional Tier 1 workers"]
+  MSK --> T2["Regional Tier 2 workers"]
+  MSK --> T3["Tier 3 suggestion workers"]
+  T1 --> RULES["Certified legality service"]
+  T2 --> RULES
+  T3 --> RULES
+  RULES --> VALID["Independent validation deployment"]
+  API --> S3["S3 Object Lock artifacts"]
+  API --> ADAPTERS["Isolated airline adapters"]
+  ADAPTERS --> CARRIER["Airline source systems"]
 ```
 
-**Read Model:** Materialized view updated by event handlers
-- `crew_status` table: current duty clock, location, active assignments
-- Updated within 100ms of event append (CQRS pattern)
+All compute runs on private EKS subnets across three availability zones. EKS
+deployments are separate for API, ingestion, projections, tiers, legality,
+independent validation, outbox publication, reconciliation and each adapter.
+Service accounts use IRSA and least-privilege IAM. Images are immutable,
+digest-pinned and signature-verified before promotion.
 
-### 4.2 Flight Data
+## Regional partitioning
 
-Flights are read-only from external scheduling system, with:
-- `flight_events` stream: cancellations, gate changes, delays
-- `flight_leg` entity: origin, destination, scheduled times
+The primary ordering key is `(tenant, region, resource)`. A region is an
+operator-approved operational partition based on crew bases, stations and
+recovery control responsibility—not merely an airport code. Tier jobs consume
+only their versioned input snapshot and may return partial legal coverage.
 
-### 4.3 Qualification Model
+Cross-partition resource movement is a saga:
 
-```
-Qualification {
-  code: string,           // e.g., "B737", "ICAO_WX", "NIGHT_FLYING"
-  valid_from: date,
-  valid_to: date,
-  source: "CERT" | "TRAINING" | "MEDICAL"
-}
-```
+1. Reserve the source resource.
+2. Reserve destination capacity.
+3. Validate legality and physical movement against one signed snapshot.
+4. Commit both partitions or emit compensating releases.
+5. Reconcile acknowledgements from both source systems.
+6. Complete the audit only after confirmed commit.
 
----
+There is no percentage threshold that silently defers legal reconciliation.
 
-## 5. Tech Stack Justification
+## Tier race
 
-### 5.1 Compute & Orchestration
+- **Tier 1:** fast, regionally isolated heuristic. It returns a legal incumbent
+  or partial legal coverage within its timebox and records every rejection.
+- **Tier 2:** actual MILP/constraint-programming upgrade in the target system.
+  It accepts the Tier 1 incumbent and may replace it only when its snapshot is
+  current, legality certificate is valid and objective result is meaningfully
+  better. The current Python implementation is only a heuristic upgrade.
+- **Tier 3:** independently available unresolved-case queue. Suggestions remain
+  usable when automated tiers or optimizer infrastructure fail. Every edit is
+  independently revalidated.
 
-| Component | Technology | Rationale |
-|-----------|------------|-----------|
-| Orchestration | Kubernetes | Native autoscaling, resource quotas per partition |
-| Worker Pool | KEDA (Kubernetes Event-Driven Autoscaling) | Scales workers based on partition queue depth |
-| Container Runtime | containerd | Faster startup than Docker |
-| Language | Rust (solvers), Python (rules), Go (infra) | Performance-critical code in Rust, rapid iteration in Python |
+Tiers race and escalate; they are not a single blocking animation.
 
-### 5.2 Event Streaming
+## Authoritative data and state
 
-| Component | Technology | Rationale |
-|-----------|------------|-----------|
-| Event Log | Apache Pulsar | Multi-tenancy, geo-replication, built-in partitioning |
-| Event Store | Apache BookKeeper | Write-once-read-many, low latency |
-| Stream Processing | Apache Flink | Exactly-once processing, stateful functions |
+Canonical records live in `core/canonical.py`. Each record has canonical and
+source IDs, tenant, version, provenance, freshness and data-quality findings.
+Operational instants retain UTC, local airport time, IANA timezone and operating
+date.
 
-### 5.3 Rules Engine
+Aurora is the transactional write model and projection store. An append locks
+the aggregate version, inserts an operational event, advances its version and
+inserts a transactional outbox row atomically. MSK is the durable distribution
+log. Consumers record event IDs and offsets for idempotent replay. Redis is
+never authoritative. Signed input, candidate, validation, deployment and replay
+artifacts are retained in versioned Object-Locked S3.
 
-| Component | Technology | Rationale |
-|-----------|------------|-----------|
-| Rules DSL | Drools (embedded) | Mature, well-tested for regulatory compliance |
-| Validation API | gRPC service | Low-latency calls from solvers |
-| Test Harness | JUnit 5 + parameterized tests | Full coverage of FAR 117 scenarios |
+The initial schema is in `infrastructure/migrations/001_operational_event_store.sql`.
 
-### 5.4 Human Interface
+## Legality and feasibility
 
-| Component | Technology | Rationale |
-|-----------|------------|-----------|
-| UI Framework | React 18 + Tailwind CSS | Fast, responsive, accessible |
-| Backend | FastAPI (Python) | Auto-generated OpenAPI docs, easy testing |
-| State Management | SWR + React Query | Stale-while-revalidate for real-time updates |
+Optimization cannot embed or bypass hard rules. A signed, effective-dated
+rules package is approved by four-eyes governance, shadow evaluated and
+executed by the legality service. Independent validation uses the identical
+snapshot and rules package through a separately deployed execution path.
 
----
+A candidate becomes deployable only when crew, aircraft, airport, passenger,
+movement and temporary-hold feasibility all pass. The trace contains exact
+inputs, arithmetic, rule identifiers, ruleset version and execution identity.
+Software tests cannot self-certify DGCA or operator compliance.
 
-## 6. Observability & Chaos Testing
+## Approval and publishing
 
-### 6.1 Metrics
-- **Per-partition:** solve_time, tier_used, crew_disruption_score
-- **System-wide:** cross_partition_moves, legal_violations, SLA_breaches
-- **Alerting:** PagerDuty integration for SLA breaches
+Authorization is enforced server-side:
 
-### 6.2 Chaos Replay Harness
+- Scheduler or recovery manager proposes.
+- Duty manager independently approves with a reason.
+- Deployment controller performs step-up authentication and publishes.
+- The proposer cannot approve the same recovery.
 
-**Test Profile: "Winter Storm Elliott Scale"**
-- 16,700 flight cancellations
-- 1,200 crew members affected
-- Simulated in 15 regional partitions
+Publication freezes the candidate, checks freshness, independently revalidates,
+reserves resources and writes per-system commands to the outbox. Completion
+requires all mandatory ACKs and reconciliation. Partial ACK, NACK or timeout is
+shown as partial. Published operational changes are compensated where possible;
+irreversible actions require a new recovery and are never called rollback.
 
-**SLA Definition:**
-```
-Tier 1: 100% of affected crew have legal solution within 5 minutes
-Tier 2: 60% of partitions converge to better solution within 5 minutes
-Tier 3: All partitions produce human-reviewable output within 30 seconds of trigger
-```
+## Infrastructure and environments
 
-**Chaos Scenarios:**
-- Worker node failures (random kill)
-- Event stream partition outage
-- Rules engine latency spike
-- Cross-partition move storm (15%+ crew moving)
+`infrastructure/terraform` defines the initial AWS baseline: three-AZ VPC,
+private EKS, Aurora PostgreSQL, IAM-authenticated MSK, encrypted Redis, KMS,
+Object-Locked S3, immutable ECR, Secrets Manager and Cognito. Kubernetes
+manifests enforce non-root containers, read-only filesystems, topology spread,
+PDB, network policy, IRSA and Kafka-lag autoscaling.
 
-**Build Gate:** Tests must pass in CI; build fails if SLA breached
+Separate state/accounts are required for development, integration, airline
+sandbox, shadow production, controlled production and disaster recovery.
+Terraform is not yet applied or validated against an airline AWS account.
 
----
+## Exit gates
 
-## 7. Failure Modes Summary
-
-| Component | Failure Mode | Degradation |
-|-----------|--------------|-------------|
-| Tier 1 solver | Worker crash | Re-queue, retry on different node |
-| Tier 2 solver | Timeout | Use Tier 1 solution |
-| Rules engine | Unavailable | Cache last-known-good rules, alert |
-| Event stream | Partition unavailable | Solve affected partition in degraded mode |
-| Cross-partition reconciler | Backlog | Defer moves, reconcile in next cycle |
-| Human UI | Down | API-only mode, suggestions still generated |
-
----
-
-## 8. Next Steps
-
-1. [ ] Implement FAR 117 rules engine (Phase 2 deliverable)
-2. [ ] Build Tier 1 heuristic solver with synthetic data
-3. [ ] Add Tier 2 optimizer integration
-4. [ ] Create human-assist UI
-5. [ ] Deploy event-sourced state layer
-6. [ ] Implement chaos/replay harness
-7. [ ] Configure elastic worker pool
+1. **Containment:** truthful synthetic labeling, identity boundary, dead controls
+   removed and carrier writes impossible.
+2. **Data foundation:** authoritative read adapters, replayable Aurora/MSK state,
+   reconciled freshness and blocking data-health findings.
+3. **Decision certification:** complete approved rules, real Tier 2, resilient
+   Tier 3, joint feasibility and reproducible candidate artifacts.
+4. **Shadow pilot:** live read-only data, security/accessibility/resilience tests
+   and airline safety-board acceptance.
+5. **Controlled publishing:** one approved carrier/region/fleet/action type,
+   dual approval, step-up auth, ACK/NACK reconciliation and staffed procedures.
+6. **Expansion:** certified load, multi-region DR, formal production acceptance,
+   support and rules/model governance.

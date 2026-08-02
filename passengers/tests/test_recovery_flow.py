@@ -5,7 +5,7 @@ from passengers.recovery_coordinator import PassengerRecoveryCoordinator
 from state.capacity_manager import CapacityManager, FlightCapacity
 
 
-def test_joint_recovery_coordinator_reserves_capacity_and_approves_plan():
+def test_joint_recovery_coordinator_checks_capacity_without_publishing_reservation():
     capacity_manager = CapacityManager()
     capacity_manager.flights["AA100"] = FlightCapacity(flight_id="AA100", economy_total=10, premium_economy_total=0, business_total=5, first_total=0)
     capacity_manager.flights["AA200"] = FlightCapacity(flight_id="AA200", economy_total=10, premium_economy_total=0, business_total=5, first_total=0)
@@ -37,10 +37,17 @@ def test_joint_recovery_coordinator_reserves_capacity_and_approves_plan():
     plan = coordinator.coordinate(
         passengers=[passenger],
         candidate_routes=routes,
-        crew_proposal={"status": "ready"},
-        aircraft_state={"AA100": {"status": "available"}},
+        crew_proposal={"assignments": [
+            {"flight_id": "AA100", "legal": True, "roles": ["captain", "first-officer", "cabin-crew"], "positioning_feasible": True},
+            {"flight_id": "AA200", "legal": True, "roles": ["captain", "first-officer", "cabin-crew"], "positioning_feasible": True},
+        ]},
+        aircraft_state={
+            "AA100": {"tail": "VT-AAA", "available": True, "compatible": True, "maintenance_clear": True, "turn_feasible": True},
+            "AA200": {"tail": "VT-AAB", "available": True, "compatible": True, "maintenance_clear": True, "turn_feasible": True},
+        },
     )
 
-    assert plan.status == "approved"
+    assert plan.status == "feasible"
+    assert plan.deployable is True
     assert plan.passenger_plan[passenger.passenger_id]["status"] == PassengerStatus.REBOOKED.value
-    assert capacity_manager.flights["AA100"].business_booked == 1
+    assert capacity_manager.flights["AA100"].business_booked == 0
