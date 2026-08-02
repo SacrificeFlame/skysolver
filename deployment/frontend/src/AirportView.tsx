@@ -22,6 +22,17 @@ export function impactOf(delay:number):'high'|'moderate'|'low'{return delay>=60?
 
 const TONE:Record<GroundState['tone'],string>={danger:'#ef6a6a',warning:'#e7c15a',success:'#57d08a',purple:'#b98af0',cyan:'#38cfe0'};
 
+const reduceMotion=()=>typeof window!=='undefined'&&typeof window.matchMedia==='function'&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Ambient aircraft that travels along a named SVG path (SMIL). Reduced-motion
+// falls back to a static aircraft parked at the path's midpoint coordinates.
+function Traveller({path,dur,begin,color,reduce,rest}:{path:string;dur:number;begin:number;color:string;reduce:boolean;rest:[number,number]}){
+ const glyph=<g transform="rotate(90)"><path d="M0 -7 L1.9 -2 L8 1.1 L8 3.1 L1.7 1.6 L1.2 5.4 L3.4 7.3 L3.4 8.5 L0 7.8 L-3.4 8.5 L-3.4 7.3 L-1.2 5.4 L-1.7 1.6 L-8 3.1 L-8 1.1 L-1.9 -2 Z" fill={color} opacity=".9" stroke="#0a1122" strokeWidth=".6"/></g>;
+ if(reduce)return <g transform={`translate(${rest[0]} ${rest[1]}) rotate(35)`}>{glyph}</g>;
+ return <g><animateMotion dur={`${dur}s`} begin={`${begin}s`} repeatCount="indefinite" rotate="auto" path={path}/>{glyph}</g>;
+}
+function Ping({x,y}:{x:number;y:number}){return <g transform={`translate(${x} ${y})`} pointerEvents="none"><circle r="6" fill="none" stroke="#ef5561" strokeWidth="1.4"><animate attributeName="r" values="6;20" dur="2.4s" repeatCount="indefinite"/><animate attributeName="opacity" values=".55;0" dur="2.4s" repeatCount="indefinite"/></circle></g>;}
+
 function PlaneGlyph({x,y,angle,color,onClick}:{x:number;y:number;angle:number;color:string;onClick?:()=>void}){
  return <g transform={`translate(${x} ${y}) rotate(${angle})`} onClick={onClick} style={onClick?{cursor:'pointer'}:undefined}>
   <path d="M0 -9 L2.4 -2.6 L10 1.4 L10 4 L2.2 2 L1.6 7 L4.4 9.4 L4.4 11 L0 10 L-4.4 11 L-4.4 9.4 L-1.6 7 L-2.2 2 L-10 4 L-10 1.4 L-2.4 -2.6 Z" fill={color} stroke="#0a1122" strokeWidth=".8"/>
@@ -41,6 +52,7 @@ function StatusPill({x,y,state,name}:{x:number;y:number;state:GroundState;name:s
 export default function AirportView({flights,cases,onSelect}:{flights:Flight[];cases:ScenarioCase[];onSelect?:(f:Flight)=>void}){
  const byId=(id:string)=>flights.find(f=>f.id===id);
  const caseOf=(id:string)=>cases.find(c=>c.flight===id);
+ const reduce=reduceMotion();
  const departures=[['AI421',96],['UK945',176],['6E531',256]] as [string,number][];
  const inbounds=[['AI807',150],['6E203',66]] as [string,number][];
  return <div className="airport-wrap">
@@ -80,12 +92,13 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
    </g>
 
    {/* Gate stands + taxi lines from stands toward the taxiway */}
-   {departures.map(([id,y])=>{const f=byId(id);if(!f)return null;const st=flightGroundState(f,caseOf(id));const active=st.tone!=='danger';
+   {departures.map(([id,y])=>{const f=byId(id);if(!f)return null;const cs=caseOf(id);const st=flightGroundState(f,cs);const active=st.tone!=='danger';
     return <g key={id}>
-     <path d={`M148 ${y+14} C 240 ${y+14} 250 ${y+40} 296 ${Math.min(y+92,332)}`} fill="none" stroke={active?'#27637a':'#22304e'} strokeWidth="2" strokeDasharray="7 7" opacity=".8"/>
+     <path d={`M148 ${y+14} C 240 ${y+14} 250 ${y+40} 296 ${Math.min(y+92,332)}`} fill="none" stroke={active?'#2f8fa5':'#22304e'} strokeWidth="2" strokeDasharray="7 7" opacity=".8">{active&&!reduce&&<animate attributeName="stroke-dashoffset" values="28;0" dur="1.1s" repeatCount="indefinite"/>}</path>
      <rect x="66" y={y-6} width="76" height="40" rx="6" fill="#141f36" stroke="#2a3a5e"/>
      <text x="80" y={y+13} fontSize="11" fontWeight="800" fill="#c3d2db">{f.gate}</text>
      <text x="80" y={y+26} fontSize="8" fill="#7f909b">{f.aircraft.registration}</text>
+     {cs&&cs.status==='open'&&<Ping x={172} y={y+13}/>}
      <PlaneGlyph x={172} y={y+13} angle={62} color={TONE[st.tone]} onClick={onSelect?()=>onSelect(f):undefined}/>
      <StatusPill x={196} y={y+8} state={st} name={`${id} · ${f.destination}`}/>
     </g>;
@@ -101,6 +114,13 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
     </g>;
    })}
    <text x="742" y="36" fontSize="9" fontWeight="700" fill="#7f909b" style={{letterSpacing:'.09em'}}>APPROACH RWY 28</text>
+
+   {/* Live ambient traffic: arrivals gliding down the approach, a departure climbing out */}
+   <g opacity=".95">
+    <Traveller path="M950 40 C 852 132 700 224 548 300" dur={15} begin={0} color="#7fd6e2" reduce={reduce} rest={[720,190]}/>
+    <Traveller path="M950 104 C 858 178 706 258 560 320" dur={19} begin={6} color="#63b9c8" reduce={reduce} rest={[770,235]}/>
+    <Traveller path="M300 476 C 430 402 566 322 786 196 L946 118" dur={17} begin={3} color="#3ecf8e" reduce={reduce} rest={[560,318]}/>
+   </g>
    <g transform="translate(66 486)"><circle r="4" cx="4" cy="-3" fill="#e7c15a" opacity=".9"/><text x="14" y="0" fontSize="9" fontWeight="700" fill="#e7c15a" style={{letterSpacing:'.07em'}}>LVP ACTIVE — CAT III MINIMA</text></g>
   </svg>
  </div>;
