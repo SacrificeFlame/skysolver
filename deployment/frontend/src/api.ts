@@ -48,6 +48,7 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 const operationId=():string=>globalThis.crypto?.randomUUID?.()||`demo-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const mutationHeaders=(stateVersion=0,idempotencyKey:string=operationId())=>({'Idempotency-Key':idempotencyKey,'Expected-State-Version':String(stateVersion),'X-Correlation-ID':operationId(),'X-Causation-ID':operationId()});
 export const api={
+  health:()=>request<{status:string;component:string}>('/api/v1/health/live'),
   overview:()=>request<Overview>('/api/v1/overview'),
   disruptions:()=>request<{items:Disruption[];provenance?:Provenance}>('/api/v1/disruptions'),
   dataHealth:()=>request<DataHealth>('/api/v1/data-health'),

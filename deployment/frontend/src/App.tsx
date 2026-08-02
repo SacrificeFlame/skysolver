@@ -10,6 +10,7 @@ import Tier3Workspace from'./Tier3Workspace';
 import DataHealthWorkspace from'./DataHealthWorkspace';
 import CrewWorkspace from'./CrewWorkspace';
 import FleetWorkspace from'./FleetWorkspace';
+import AirportView from'./AirportView';
 
 type Route='overview'|'datahealth'|'disruptions'|'crew'|'flights'|'aircraft'|'routes'|'tiers'|'tier1'|'tier2'|'tier3'|'decisions'|'deployment'|'audit';
 const nav:[Route,string,any,boolean?][]=[['overview','Overview',Activity],['datahealth','Data Health',Database],['disruptions','Disruptions',CloudLightning],['crew','Crew Recovery',Users],['flights','Flights',Plane],['aircraft','Aircraft',Wrench],['routes','Planned Routes',Map],['tiers','Solver Tiers',GitBranch],['tier1','Tier 1 · Legal',Gauge,true],['tier2','Tier 2 · Optimize',Cpu,true],['tier3','Tier 3 · Human',Users,true],['decisions','Decisions',ShieldCheck],['deployment','Deployment',ArrowRight],['audit','Audit',History]];
@@ -20,19 +21,76 @@ const flightIds=['AI421','6E203','UK945','AI807','6E531'];
 function Badge({children,tone='neutral'}:{children:any;tone?:string}){return <span className={`badge ${tone}`}>{children}</span>}
 function PageHead({eyebrow,title,detail,actions}:{eyebrow:string;title:string;detail:string;actions?:any}){return <header className="page-head"><div><span>{eyebrow}</span><h1>{title}</h1><p>{detail}</p></div><div className="page-actions">{actions}</div></header>}
 function Table({headers,rows,onRow}:{headers:string[];rows:any[][];onRow?:(row:any[])=>void}){return <div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i} className={onRow?'clickable':''} onClick={()=>onRow?.(row)}>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>)}</tbody></table></div>}
-function Provenance(){return <div className="scenario-strip"><span className="dot" aria-hidden="true"/><strong>Synthetic scenario data</strong><span>SkySolver crew-recovery prototype · DGCA-oriented ruleset · not a live carrier feed</span></div>}
+function TopBar(){
+ const[now,setNow]=useState(()=>new Date());
+ const[healthy,setHealthy]=useState<boolean|null>(null);
+ useEffect(()=>{
+  const clock=setInterval(()=>setNow(new Date()),1000);
+  const check=()=>api.health().then(h=>setHealthy(h.status==='live')).catch(()=>setHealthy(false));
+  check();const poll=setInterval(check,60000);
+  return()=>{clearInterval(clock);clearInterval(poll)};
+ },[]);
+ return <div className="topbar">
+  <div className="tb-left"><span className="dot" aria-hidden="true"/><strong>Guided recovery</strong><span className="muted small">Synthetic scenario · DGCA-oriented ruleset · not a live carrier feed</span></div>
+  <div className="tb-right">
+   <span className={`sys ${healthy===null?'':healthy?'ok':'bad'}`}><i/>{healthy===null?'Checking…':healthy?'System healthy':'Backend unreachable'}</span>
+   <span className="clock tabular">{now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Kolkata',hour12:false})} IST</span>
+   <span className="avatar" title="ops · scheduler-demo">OPS</span>
+  </div>
+ </div>;
+}
 
-function Overview({d,scenario,fleet,go}:{d:Disruption;scenario:Scenario;fleet:FleetAircraft[];go:(r:Route)=>void}){
- const s=scenario.stats;const pct=Math.round((s.total?s.resolved/s.total:0)*100);
- const blocked=fleet.filter(a=>['blocked','maintenance','inbound'].includes(a.status)).length;
- const tiles:[string,any,string,string][]=[['Open crew cases',s.open,s.open?'danger':'success','illegal pairings'],['Resolved',s.resolved,'success','legal reassignments'],['Human review',s.escalated,s.escalated?'purple':'neutral','Tier 3 queue'],['Recovery',`${pct}%`,pct===100?'success':'warning',`${s.resolved}/${s.total} cases`],['Passengers exposed',d.passengers.toLocaleString('en-IN'),'neutral','across affected flights'],['Aircraft blocked',blocked,blocked?'warning':'success',`${fleet.length} in fleet`]];
+function Overview({d,scenario,fleet,flights,setFlight,go}:{d:Disruption;scenario:Scenario;fleet:FleetAircraft[];flights:Flight[];setFlight:(f:Flight)=>void;go:(r:Route)=>void}){
+ const s=scenario.stats;const pct=Math.round((s.total?s.resolved/s.total:0)*100);const allDone=s.total>0&&s.open===0&&s.escalated===0;
+ const blocked=fleet.filter(a=>a.status==='blocked').length;
+ const sorted=[...flights].sort((a,b)=>b.delay-a.delay);
+ const started=new Date(d.started_at),deadline=new Date(d.deadline);
+ const fmt=(x:Date)=>x.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata',hour12:false});
+ const timeline:[string,string,'done'|'current'|'pending'][]=[
+  ['03:15','Dense fog forecast issued','done'],
+  [fmt(started),'Fog below CAT III — departures metered','done'],
+  [fmt(deadline),'Recovery deadline set','done'],
+  ['now',`Crew recovery ${s.resolved}/${s.total}`,allDone?'done':'current'],
+  ['','Recovery plan ready',allDone?'current':'pending'],
+ ];
  return <>
-  <PageHead eyebrow="NETWORK BRIEFING" title="India crew-recovery control" detail="Live status of the active disruption, crew recovery progress and pending decisions." actions={<button className="primary" onClick={()=>go('crew')}>Open recovery worklist</button>}/>
-  <div className="kpis">{tiles.map(([k,v,tone,sub])=><div className={`kpi ${tone}`} key={k}><span>{k}</span><strong>{v}</strong><small>{sub}</small></div>)}</div>
-  <div className="progressbar big"><div className="progressbar-fill" style={{width:`${pct}%`}}/><span>{s.resolved} of {s.total} crew cases resolved{s.escalated?` · ${s.escalated} in human review`:''}</span></div>
-  <div className="overview-grid">
-   <section className="card urgent"><header><div><Badge tone="danger">P1 · {d.severity.toUpperCase()}</Badge><h2>{d.title}</h2></div></header><p>{d.summary}</p><div className="fact-strip small">{[['Source',d.source],['Confidence',`${Math.round(d.confidence*100)}%`],['Partitions',d.partitions.join(', ')]].map(x=><span key={x[0]}>{x[0]}<b>{x[1]}</b></span>)}</div><button onClick={()=>go('disruptions')}>Inspect disruption</button></section>
-   <section className="card"><header className="rowbetween"><h2>Recovery cases</h2><button className="linklike" onClick={()=>go('crew')}>Work cases →</button></header><div className="mini-cases">{scenario.cases.map(c=><div key={c.flight} className="mini-case"><span className={`dotstatus ${c.status}`}/><b>{c.flight}</b><span className="muted small">{c.origin}→{c.destination} · {c.aircraft}</span><span className={`badge ${c.status==='resolved'?'success':c.status==='escalated'?'purple':'danger'}`}>{c.status==='resolved'?`✓ ${c.replacementId}`:c.status==='escalated'?'TIER 3':'OPEN'}</span></div>)}{scenario.cases.length===0&&<p className="muted">Loading cases…</p>}</div></section>
+  <section className="prio-banner">
+   <div className="prio-left"><Badge tone="danger">PRIORITY 1</Badge><h1>{d.title}</h1><p>{d.summary}</p></div>
+   <div className="prio-kpis">
+    <div><strong>{flights.length}</strong><span>Flights affected</span><small>{d.partitions.join(' · ')}</small></div>
+    <div><strong>{d.passengers.toLocaleString('en-IN')}</strong><span>Passengers</span><small className={s.paxResolved?'good':''}>{s.paxResolved?`↓ ${s.paxResolved.toLocaleString('en-IN')} protected`:'exposure building'}</small></div>
+    <div><strong className={s.open?'bad':'good'}>{s.open+s.escalated}</strong><span>Illegal crews</span><small>{s.resolved} resolved</small></div>
+    <div><strong className={blocked?'warn':'good'}>{blocked}</strong><span>Aircraft blocked</span><small>{fleet.filter(a=>a.status==='available'||a.status==='ready').length} spares ready</small></div>
+   </div>
+  </section>
+  <div className="guided">
+   <aside className="card gcol"><header className="rowbetween"><h2>Affected flights</h2><span className="muted small">{flights.length} by impact</span></header>
+    {sorted.map(f=>{const imp=f.delay>=60?'high':f.delay>=45?'moderate':'low';const c=scenario.cases.find(x=>x.flight===f.id);
+     return <button key={f.id} className="fl-row" onClick={()=>{if(c&&c.status!=='resolved')go('crew');else{setFlight(f);go('routes')}}}>
+      <span className={`badge ${imp==='high'?'danger':imp==='moderate'?'warning':'neutral'}`}>{imp.toUpperCase()}</span>
+      <div><strong>{f.id} <span className="muted">{f.origin} → {f.destination}</span></strong><small>{f.aircraft.type} · Gate {f.gate} · Pax {f.passengers}{c?` · ${c.status==='resolved'?`crew ${c.replacementId}`:c.status==='escalated'?'Tier 3':'crew action'}`:''}</small></div>
+      <span className="delay-chip">+{f.delay}m</span>
+     </button>;})}
+   </aside>
+   <section className="card gcol center"><header className="rowbetween"><h2>DEL operational view</h2><span className="muted small">Indira Gandhi Intl · IST</span></header>
+    <AirportView flights={flights} cases={scenario.cases} onSelect={f=>{setFlight(f);go('routes')}}/>
+    <div className="ev-timeline" role="list" aria-label="Event timeline">{timeline.map(([t,label,st],i)=><div key={i} className={`ev ${st}`} role="listitem"><span className="ev-dot"/><small>{t}</small><span>{label}</span></div>)}</div>
+   </section>
+   <aside className="card gcol reco"><header className="rowbetween"><h2>Recommended recovery</h2><Badge tone="danger">P1</Badge></header>
+    <h3 className="reco-h">{allDone?'All pairings legal — plan assembled':`Clear ${s.open+s.escalated} illegal pairings, protect ${d.passengers.toLocaleString('en-IN')} passengers`}</h3>
+    <p className="muted small">Reassign from the standby roster; each option is validated by the legality engine. Cases without a legal option escalate to Tier 3.</p>
+    <div className="outcome"><span className="o-label">Outcome</span>
+     <div className={`o-line ${s.resolved?'ok':''}`}>{s.resolved?<Check/>:<span className="o-dot"/>}<span>{s.resolved}/{s.total} crew pairings legalized</span></div>
+     <div className={`o-line ${s.paxResolved?'ok':''}`}>{s.paxResolved?<Check/>:<span className="o-dot"/>}<span>{s.paxResolved.toLocaleString('en-IN')} passengers protected</span></div>
+     <div className={`o-line ${s.escalated?'warn':''}`}>{s.escalated?<AlertTriangle/>:<span className="o-dot"/>}<span>{s.escalated} case(s) in supervisor review</span></div>
+     <div className="o-line info"><span className="o-dot"/><span>{blocked} aircraft awaiting LVP release</span></div>
+    </div>
+    {allDone
+     ?<button className="primary wide cta" onClick={()=>go('decisions')}>Review recovery plan</button>
+     :<button className="primary wide cta" onClick={()=>go(s.open?'crew':'tier3')}>{s.open?'Work recovery cases':'Open Tier 3 queue'}</button>}
+    <div className="reco-progress"><div style={{width:`${pct}%`}}/></div>
+    <p className="muted small center-t">{pct}% recovered · {s.open} open · {s.escalated} in review</p>
+   </aside>
   </div>
  </>;
 }
@@ -130,6 +188,6 @@ export default function App(){
  const validatePlan=()=>recovery?.selected_candidate_id&&work(()=>api.validate(recovery.id,recovery.state_version,recovery.selected_candidate_id||undefined),'Legality checks completed');
  const submitApproval=(reason:string)=>recovery&&work(()=>api.approve(recovery.id,recovery.state_version,reason),'Approval request submitted');
  const deployPlan=()=>recovery&&work(()=>api.deploy(recovery.id,recovery.state_version),'Deployment requested');
- const page=useMemo(()=>{switch(route){case'overview':return <Overview d={d} scenario={scenario} fleet={fleet} go={go}/>;case'datahealth':return <DataHealthWorkspace/>;case'disruptions':return <Disruptions d={d} flights={flights} go={go}/>;case'crew':return <CrewWorkspace scenario={scenario} go={go}/>;case'flights':return <Flights flights={flights} setFlight={setFlight} go={go}/>;case'aircraft':return <FleetWorkspace onOpenFlight={id=>api.flight(id).then(f=>{setFlight(f);go('routes')})}/>;case'routes':return <RouteWorkspace flight={flight} onFlight={setFlight}/>;case'tiers':return <SolverWorkspace onOpen={go}/>;case'tier1':case'tier2':return <SolverWorkspace selected={route} onOpen={go}/>;case'tier3':return <Tier3Workspace scenario={scenario} go={go}/>;case'decisions':return <Decisions scenario={scenario} recovery={recovery} run={run} choose={choose} busy={busy} go={go}/>;case'deployment':return <Deployment recovery={recovery} approvalReason={approvalReason} setApprovalReason={setApprovalReason} approve={submitApproval} deploy={deployPlan} validate={validatePlan} busy={busy}/>;case'audit':return <AuditPage items={audit}/>}},[route,d,flight,flights,fleet,recovery,audit,busy,approvalReason,scenario]);
- return <main className="app-shell"><aside className="sidebar"><div className="logo"><span><Plane/></span><div>SKYSOLVER<small>Crew recovery · India</small></div></div><nav aria-label="Primary">{nav.map(([id,label,Icon,sub])=><button key={id} className={`${route===id||(id==='tiers'&&['tier1','tier2','tier3'].includes(route))?'active':''}${sub?' sub':''}`} aria-current={route===id?'page':undefined} onClick={()=>go(id)}><Icon/>{label}</button>)}</nav><div className="side-foot"><Badge tone="cyan">PROTOTYPE</Badge><span>Synthetic scenario</span><small>DGCA-oriented ruleset</small></div></aside><section className="main"><Provenance/><div className="content">{page}</div></section>{notice&&<div className="toast"><ShieldCheck/>{notice}<button onClick={()=>setNotice('')}><X/></button></div>}</main>
+ const page=useMemo(()=>{switch(route){case'overview':return <Overview d={d} scenario={scenario} fleet={fleet} flights={flights} setFlight={setFlight} go={go}/>;case'datahealth':return <DataHealthWorkspace/>;case'disruptions':return <Disruptions d={d} flights={flights} go={go}/>;case'crew':return <CrewWorkspace scenario={scenario} go={go}/>;case'flights':return <Flights flights={flights} setFlight={setFlight} go={go}/>;case'aircraft':return <FleetWorkspace onOpenFlight={id=>api.flight(id).then(f=>{setFlight(f);go('routes')})}/>;case'routes':return <RouteWorkspace flight={flight} onFlight={setFlight}/>;case'tiers':return <SolverWorkspace onOpen={go}/>;case'tier1':case'tier2':return <SolverWorkspace selected={route} onOpen={go}/>;case'tier3':return <Tier3Workspace scenario={scenario} go={go}/>;case'decisions':return <Decisions scenario={scenario} recovery={recovery} run={run} choose={choose} busy={busy} go={go}/>;case'deployment':return <Deployment recovery={recovery} approvalReason={approvalReason} setApprovalReason={setApprovalReason} approve={submitApproval} deploy={deployPlan} validate={validatePlan} busy={busy}/>;case'audit':return <AuditPage items={audit}/>}},[route,d,flight,flights,fleet,recovery,audit,busy,approvalReason,scenario]);
+ return <main className="app-shell"><aside className="sidebar"><div className="logo"><span><Plane/></span><div>SKYSOLVER<small>Crew recovery · India</small></div></div><nav aria-label="Primary">{nav.map(([id,label,Icon,sub])=><button key={id} className={`${route===id||(id==='tiers'&&['tier1','tier2','tier3'].includes(route))?'active':''}${sub?' sub':''}`} aria-current={route===id?'page':undefined} onClick={()=>go(id)}><Icon/>{label}</button>)}</nav><div className="side-foot"><Badge tone="cyan">PROTOTYPE</Badge><span>Synthetic scenario</span><small>DGCA-oriented ruleset</small></div></aside><section className="main"><TopBar/><div className="content">{page}</div></section>{notice&&<div className="toast"><ShieldCheck/>{notice}<button onClick={()=>setNotice('')}><X/></button></div>}</main>
 }
