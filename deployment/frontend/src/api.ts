@@ -49,6 +49,8 @@ const operationId=():string=>globalThis.crypto?.randomUUID?.()||`demo-${Date.now
 const mutationHeaders=(stateVersion=0,idempotencyKey:string=operationId())=>({'Idempotency-Key':idempotencyKey,'Expected-State-Version':String(stateVersion),'X-Correlation-ID':operationId(),'X-Causation-ID':operationId()});
 export const api={
   health:()=>request<{status:string;component:string}>('/api/v1/health/live'),
+  login:(username:string,password:string,role?:string)=>request<{ok:boolean;operator:{subject:string;role:string}}>('/api/login',{method:'POST',body:JSON.stringify({username,password,role})}),
+  simulateDeployment:(id:string,state_version:number)=>request<Envelope>(`/api/v1/recoveries/${id}/deployments/simulate`,{method:'POST',headers:mutationHeaders(state_version),body:JSON.stringify({})}),
   overview:()=>request<Overview>('/api/v1/overview'),
   disruptions:()=>request<{items:Disruption[];provenance?:Provenance}>('/api/v1/disruptions'),
   dataHealth:()=>request<DataHealth>('/api/v1/data-health'),

@@ -55,7 +55,7 @@ def test_dashboard_redirects_anonymous_browser_to_login_without_weakening_api_au
 def test_dashboard_is_served_after_demo_login():
     response = client().get("/dashboard")
     assert response.status_code == 200
-    assert "SkySolver OCC" in response.text
+    assert 'id="root"' in response.text and "SkySolver" in response.text
 
 
 def test_data_health_blocks_operational_deployment():

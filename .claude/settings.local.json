@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Get-Command *)",
-      "PowerShell(python -c \"import sys; print\\(f'Python version: {sys.version}'\\)\")",
-      "PowerShell(& \"C:\\\\Users\\\\Avi_k\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\python.exe\" -c \"import sys; print\\(sys.version\\)\")"
-    ]
-  }
-}

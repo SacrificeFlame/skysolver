@@ -34,6 +34,16 @@ class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str = Field(min_length=1, max_length=128)
     password: str = Field(min_length=1, max_length=256)
+    role: str | None = None
+
+
+# Demo role identities. Distinct subjects keep segregation-of-duties intact so a
+# duty manager can approve a plan a scheduler proposed, and a controller deploys.
+DEMO_ROLE_SUBJECTS = {
+    "scheduler-demo": "ops",
+    "duty-manager": "duty.manager",
+    "deployment-controller": "ops.controller",
+}
 
 
 class RecoveryRequest(BaseModel):
@@ -201,9 +211,11 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
         expected_password = os.environ.get("SKYSOLVER_DEMO_PASSWORD", "sky2026")
         if not hmac.compare_digest(body.username, expected_user) or not hmac.compare_digest(body.password, expected_password):
             raise HTTPException(status_code=401, detail="Invalid credentials")
-        token = issue_session(body.username)
+        role = body.role if body.role in DEMO_ROLE_SUBJECTS else "scheduler-demo"
+        subject = DEMO_ROLE_SUBJECTS[role]
+        token = issue_session(subject, role=role)
         response.headers["Set-Cookie"] = session_cookie(token, os.environ.get("SKYSOLVER_COOKIE_SECURE", "false").lower() == "true")
-        return {"ok": True, "redirect": "/dashboard", "operator": {"subject": body.username, "role": "scheduler-demo", "tenant_id": "synthetic-airline"}}
+        return {"ok": True, "redirect": "/dashboard", "operator": {"subject": subject, "role": role, "tenant_id": "synthetic-airline"}}
 
     @app.get("/api/v1/overview")
     def overview(_: Principal = Depends(principal)):
@@ -310,6 +322,10 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
     @app.post("/api/v1/recoveries/{recovery_id}/deployments")
     def deploy(recovery_id: str, context: MutationContext = Depends(mutation_context), actor: Principal = Depends(require_permission(Permission.DEPLOY,step_up=True))):
         return recovery_store.deploy(recovery_id, {"state_version": context.state_version, "operator_id": actor.subject, "correlation_id": context.correlation_id, "causation_id": context.causation_id}, context.idempotency_key)
+
+    @app.post("/api/v1/recoveries/{recovery_id}/deployments/simulate")
+    def simulate_deployment(recovery_id: str, context: MutationContext = Depends(mutation_context), actor: Principal = Depends(require_permission(Permission.DEPLOY))):
+        return recovery_store.simulate_deployment(recovery_id, {"state_version": context.state_version, "operator_id": actor.subject, "correlation_id": context.correlation_id, "causation_id": context.causation_id, "idempotency_key": context.idempotency_key})
 
     @app.get("/api/v1/deployments/{deployment_id}")
     def deployment(deployment_id: str, _: Principal = Depends(principal)):

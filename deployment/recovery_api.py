@@ -538,6 +538,57 @@ class RecoveryStore:
             self._persist()
             return result
 
+    def simulate_deployment(self, recovery_id, payload):
+        """Shadow deployment: run the real command state machine against synthetic
+        adapters to produce per-resource acknowledgements, without a live carrier
+        publish. Used to demonstrate the deployment orchestration end to end."""
+        with self._lock:
+            recovery = self._recoveries.get(recovery_id)
+            if not recovery:
+                raise WorkflowError(404, "not_found", "Recovery not found")
+            self._version(recovery, payload)
+            if not recovery.get("selected_candidate_id"):
+                raise WorkflowError(422, "candidate_required", "Select a candidate before deployment")
+            if not recovery["validated"]:
+                raise WorkflowError(422, "validation_required", "Validate the plan before deployment")
+            if not recovery.get("approvals"):
+                raise WorkflowError(422, "approval_required", "A duty-manager approval is required before deployment")
+            candidate = next(item for item in recovery["candidates"] if item["id"] == recovery["selected_candidate_id"])
+            resources = []
+            for assignment in candidate["assignments"]:
+                resources.append({"resource_type": "crew", "resource_id": assignment["crew_id"], "target_system": "crew-operations-adapter", "action": "publish_assignment", "reversible": True})
+            for flight_id in {leg["flight_id"] for assignment in candidate["assignments"] for leg in assignment["flight_legs"]}:
+                flight = next(item for item in FLIGHTS if item["id"] == flight_id)
+                resources.extend([
+                    {"resource_type": "aircraft", "resource_id": flight["aircraft"]["registration"], "target_system": "aircraft-operations-adapter", "action": "publish_rotation", "reversible": True},
+                    {"resource_type": "gate", "resource_id": f"{flight['origin']}:{flight['proposed_gate']}", "target_system": "aodb-adapter", "action": "publish_gate", "reversible": True},
+                    {"resource_type": "passenger", "resource_id": flight_id, "target_system": "passenger-service-adapter", "action": "publish_recovery", "reversible": False},
+                ])
+            deployment = self._deployment_registry.create(tenant_id="synthetic-airline", recovery_id=recovery_id,
+                candidate_id=candidate["id"], candidate_version=candidate["state_version"], idempotency_key=payload.get("idempotency_key") or str(uuid.uuid4()),
+                correlation_id=str(payload.get("correlation_id") or uuid.uuid4()), requested_by=payload.get("operator_id", "deployment-controller"), resources=resources)
+            # Drive the command state machine to a realistic outcome: most resources
+            # acknowledge, one times out and one is rejected -> a partial deployment.
+            dep = deployment
+            cmds = list(deployment.commands)
+            n = len(cmds)
+            reference = deployment.deployment_id
+            for idx, cmd in enumerate(cmds):
+                dep = self._deployment_registry.mark_sent(reference, cmd.command_id, dep.state_version, f"ADP-{idx:03d}")
+            for idx, cmd in enumerate(cmds):
+                if n >= 3 and idx == n - 2:
+                    dep = self._deployment_registry.timeout(reference, cmd.command_id, dep.state_version)
+                elif n >= 2 and idx == n - 1:
+                    dep = self._deployment_registry.acknowledge(reference, cmd.command_id, dep.state_version, accepted=False, adapter_reference=f"ADP-{idx:03d}", failure_code="ADAPTER_REJECTED", failure_detail="Synthetic passenger-service adapter declined the command")
+                else:
+                    dep = self._deployment_registry.acknowledge(reference, cmd.command_id, dep.state_version, accepted=True, adapter_reference=f"ADP-{idx:03d}")
+            deployment = self._deployment_registry.get(reference)
+            acknowledgements = [{"resource": f"{item.resource_type}:{item.resource_id}", "command_id": item.command_id, "status": item.status.value, "detail": item.failure_detail, "target_reference": item.adapter_reference} for item in deployment.commands]
+            recovery.update({"deployment_id": deployment.deployment_id, "deployment_status": deployment.status.value, "status": "shadow_deployed", "stage": "shadow_acknowledgements", "progress": 100, "acknowledgements": acknowledgements, "simulated": True, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            self._record(recovery_id, "shadow_deployment_simulated", payload.get("operator_id", "controller"), deployment.deployment_id)
+            self._persist()
+            return self.envelope("shadow_deployed", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery), deployment=deployment.to_dict(), acknowledgements=acknowledgements)
+
     def deployment(self, deployment_id):
         try:
             return deepcopy(self._deployment_registry.get(deployment_id).to_dict())

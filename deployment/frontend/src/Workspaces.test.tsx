@@ -61,22 +61,29 @@ describe('Tier 3 workspace states',()=>{
 
 describe('Deployment authority separation',()=>{
  const recovery={id:'R1',disruption_id:'D',partition_id:'DEL',objective:'balanced',status:'awaiting_joint_feasibility',stage:'',tier:'tier1',progress:90,state_version:3,selected_candidate_id:'C1',validated:true,deployed:false,approvals:[],acknowledgements:[],carrier_writes_enabled:false,created_at:'',updated_at:'',candidates:[{id:'C1',joint_feasibility:{status:'not_evaluated',deployable:false,findings:[{code:'AUTHORITATIVE_RESOURCE_DATA_REQUIRED',blocking:true,message:'resource data required'}]}}]} as unknown as Recovery;
- it('blocks deploy on joint feasibility and gates approval on a reason',()=>{
-  const approve=vi.fn(),deploy=vi.fn();
-  const{rerender}=render(<Deployment recovery={recovery} approvalReason="" setApprovalReason={()=>{}} approve={approve} deploy={deploy} busy={false}/>);
-  expect(screen.getByText(/CARRIER WRITES DISABLED/i)).toBeTruthy();
-  expect(screen.getByText(/Joint feasibility not satisfied/i)).toBeTruthy();
-  expect((screen.getByRole('button',{name:/Publish to carrier systems/i})as HTMLButtonElement).disabled).toBe(true);
-  expect((screen.getByRole('button',{name:/Submit for approval/i})as HTMLButtonElement).disabled).toBe(true);
-  rerender(<Deployment recovery={recovery} approvalReason="duty manager sign-off" setApprovalReason={()=>{}} approve={approve} deploy={deploy} busy={false}/>);
-  const approveBtn=screen.getByRole('button',{name:/Submit for approval/i})as HTMLButtonElement;
-  expect(approveBtn.disabled).toBe(false);
-  fireEvent.click(approveBtn);
-  expect(approve).toHaveBeenCalledWith('duty manager sign-off');
-  expect(deploy).not.toHaveBeenCalled();
+ it('gates approval on a reason and calls authorize, not deploy',()=>{
+  const authorize=vi.fn(),deployNow=vi.fn();
+  const{rerender}=render(<Deployment recovery={recovery} approvalReason="" setApprovalReason={()=>{}} authorize={authorize} deployNow={deployNow} validate={()=>{}} busy={false}/>);
+  expect(screen.getByText(/Duty-manager approval/i)).toBeTruthy();
+  const btn=screen.getByRole('button',{name:/Authorize as duty manager/i})as HTMLButtonElement;
+  expect(btn.disabled).toBe(true); // reason too short
+  rerender(<Deployment recovery={recovery} approvalReason="Reviewed and sound" setApprovalReason={()=>{}} authorize={authorize} deployNow={deployNow} validate={()=>{}} busy={false}/>);
+  const btn2=screen.getByRole('button',{name:/Authorize as duty manager/i})as HTMLButtonElement;
+  expect(btn2.disabled).toBe(false);
+  fireEvent.click(btn2);
+  expect(authorize).toHaveBeenCalledWith('Reviewed and sound');
+  expect(deployNow).not.toHaveBeenCalled();
+ });
+ it('shows the deployment result with a partial state and ack grid',()=>{
+  const deployed={...recovery,approvals:[{role:'duty-manager',reason:'ok'}],simulated:true,deployment_status:'partial',deployment_id:'DEP-ABC123',acknowledgements:[{resource:'crew:SIM-001',status:'acknowledged'},{resource:'gate:BLR:D08',status:'timed_out'},{resource:'passenger:6E203',status:'rejected',detail:'adapter declined'}]} as unknown as Recovery;
+  render(<Deployment recovery={deployed} approvalReason="" setApprovalReason={()=>{}} authorize={()=>{}} deployNow={()=>{}} validate={()=>{}} busy={false}/>);
+  expect(screen.getByText(/Deployment result/i)).toBeTruthy();
+  expect(screen.getAllByText(/PARTIAL/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/crew:SIM-001/)).toBeTruthy();
+  expect(screen.getByText(/require retry or compensation/i)).toBeTruthy();
  });
  it('shows the no-recovery empty state',()=>{
-  render(<Deployment recovery={null} approvalReason="" setApprovalReason={()=>{}} approve={()=>{}} deploy={()=>{}} busy={false}/>);
+  render(<Deployment recovery={null} approvalReason="" setApprovalReason={()=>{}} authorize={()=>{}} deployNow={()=>{}} validate={()=>{}} busy={false}/>);
   expect(screen.getByText(/No recovery in progress/i)).toBeTruthy();
  });
 });
