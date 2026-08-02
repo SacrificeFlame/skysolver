@@ -5,6 +5,7 @@ import SolverWorkspace from'./SolverWorkspace';
 import Tier3Workspace from'./Tier3Workspace';
 import{Deployment}from'./App';
 import type{Recovery}from'./types';
+import type{Scenario}from'./scenario';
 
 afterEach(()=>{cleanup();vi.unstubAllGlobals()});
 const ok=(data:unknown)=>Promise.resolve({ok:true,status:200,json:()=>Promise.resolve(data)} as Response);
@@ -15,9 +16,9 @@ describe('Data Health workspace states',()=>{
   vi.stubGlobal('fetch',vi.fn(()=>ok({status:'blocked_for_operations',solve_allowed:true,deployment_allowed:false,evaluated_at:'',sources:[{source_system:'scenario-fixture',authoritative:false,contract_version:'fixture-v1',fresh:false,age_seconds:null,dead_letter_count:0,reconciliation_drift_count:0,circuit_state:'closed',findings:[]}],findings:[{code:'SOURCE_NOT_AUTHORITATIVE',severity:'blocking',message:'not authoritative'}]})));
   render(<DataHealthWorkspace/>);
   expect(screen.getByText(/Evaluating source systems/i)).toBeTruthy();
-  await screen.findByText(/Authoritative-source readiness/i);
+  await screen.findByText(/operation gates/i);
   expect(screen.getByText(/scenario-fixture/)).toBeTruthy();
-  expect(screen.getByText(/DEPLOYMENT BLOCKED/i)).toBeTruthy();
+  expect(screen.getByText(/Closed — publication requires/i)).toBeTruthy();
  });
  it('shows an explicit unavailable state on error',async()=>{
   vi.stubGlobal('fetch',vi.fn(()=>fail(503,{message:'health down'})));
@@ -40,10 +41,21 @@ describe('Solver tier workspace truthful states',()=>{
  });
 });
 
-describe('Tier 3 workspace guard state',()=>{
- it('guards when no recovery exists',()=>{
-  render(<Tier3Workspace recovery={null} onRecovery={()=>{}} onStart={()=>{}}/>);
-  expect(screen.getByText(/No active recovery/i)).toBeTruthy();
+describe('Tier 3 workspace states',()=>{
+ const baseScenario={loading:false,error:'',roster:[],cases:[],usedCrew:new Set<string>(),spares:[],reload:()=>{},reset:()=>{},availableFor:()=>[],reassign:()=>{},overrideAssign:()=>{},escalate:()=>{},reopen:()=>{},stats:{total:0,open:0,resolved:0,escalated:0,pax:0,paxResolved:0,coverage:0}} as unknown as Scenario;
+ it('shows a clear queue when nothing is escalated',()=>{
+  render(<Tier3Workspace scenario={baseScenario} go={()=>{}}/>);
+  expect(screen.getByText(/Human review queue is clear/i)).toBeTruthy();
+ });
+ it('offers ranked options with residual risk for an escalated case',()=>{
+  const crew={id:'IC-507',name:'Dev Patel',rank:'Captain',base:'BOM',qualifications:['B787'],status:'reserve',duty_remaining:'07:40',rest_hours:9,assigned_flight:null,seniority:13,current_route:null};
+  const esc={flight:'AI807',origin:'BOM',destination:'DEL',aircraft:'B787-8',gate:'T2-16',passengers:242,incumbentId:'IC-333',incumbentName:'Meera Nair',requiredQual:'B787',status:'escalated' as const};
+  const overrideAssign=vi.fn();
+  const scenario={...baseScenario,cases:[esc],availableFor:()=>[crew],overrideAssign} as unknown as Scenario;
+  render(<Tier3Workspace scenario={scenario} go={()=>{}}/>);
+  expect(screen.getAllByText(/RESIDUAL RISK/i).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole('button',{name:/Accept override/i}));
+  expect(overrideAssign).toHaveBeenCalledWith('AI807',crew);
  });
 });
 

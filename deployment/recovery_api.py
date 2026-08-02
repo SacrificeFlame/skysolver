@@ -30,7 +30,7 @@ FLIGHTS = [
     {"id": "AI421", "origin": "DEL", "destination": "BOM", "aircraft": {"registration": "VT-EXA", "type": "A321", "status": "blocked"}, "gate": "T3-42", "proposed_gate": "T3-46", "crew": {"id": "IC-184", "status": "illegal", "duty_remaining": "-00:38", "qualifications": ["A321"]}, "passengers": 186, "connections": 42, "delay": 92, "state": "recovery_pending", "tier": "tier1", "risk": "critical"},
     {"id": "6E203", "origin": "BLR", "destination": "DEL", "aircraft": {"registration": "VT-IAB", "type": "A320neo", "status": "available"}, "gate": "D08", "proposed_gate": "D08", "crew": {"id": "IC-072", "status": "searching", "duty_remaining": "03:42", "qualifications": ["A320"]}, "passengers": 179, "connections": 37, "delay": 74, "state": "solving", "tier": "tier1", "risk": "high"},
     {"id": "UK945", "origin": "DEL", "destination": "HYD", "aircraft": {"registration": "VT-TNE", "type": "A321neo", "status": "blocked"}, "gate": "T3-31", "proposed_gate": "T3-35", "crew": {"id": "IC-811", "status": "illegal", "duty_remaining": "00:12", "qualifications": ["A321"]}, "passengers": 168, "connections": 31, "delay": 61, "state": "human_review", "tier": "tier3", "risk": "critical"},
-    {"id": "AI807", "origin": "BOM", "destination": "DEL", "aircraft": {"registration": "VT-ANR", "type": "B787-8", "status": "inbound"}, "gate": "T2-16", "proposed_gate": "T2-16", "crew": {"id": "IC-333", "status": "legal", "duty_remaining": "04:26", "qualifications": ["B787"]}, "passengers": 242, "connections": 54, "delay": 48, "state": "protected", "tier": "tier1", "risk": "medium"},
+    {"id": "AI807", "origin": "BOM", "destination": "DEL", "aircraft": {"registration": "VT-ANR", "type": "B787-8", "status": "inbound"}, "gate": "T2-16", "proposed_gate": "T2-16", "crew": {"id": "IC-333", "status": "illegal", "duty_remaining": "-00:15", "qualifications": ["B787"]}, "passengers": 242, "connections": 54, "delay": 48, "state": "human_review", "tier": "tier3", "risk": "critical"},
     {"id": "6E531", "origin": "DEL", "destination": "CCU", "aircraft": {"registration": "VT-IZR", "type": "A320neo", "status": "ready"}, "gate": "T2-11", "proposed_gate": "T2-11", "crew": {"id": "IC-590", "status": "legal", "duty_remaining": "03:42", "qualifications": ["A320"]}, "passengers": 183, "connections": 18, "delay": 43, "state": "recovered", "tier": "tier1", "risk": "low"},
 ]
 
@@ -39,7 +39,7 @@ DISRUPTIONS = [{
     "summary": "Dense fog reduced DEL departure capacity; crew, aircraft and passenger dependencies are cascading across four Indian network partitions.",
     "source": "IMD / Delhi ATC flow control", "confidence": 0.96, "started_at": "2026-07-31T00:28:00Z",
     "deadline": "2026-07-31T02:10:00Z", "partitions": ["DEL", "BOM", "BLR", "HYD"],
-    "affected_flights": [f["id"] for f in FLIGHTS], "illegal_crews": 7, "blocked_aircraft": 4,
+    "affected_flights": [f["id"] for f in FLIGHTS], "illegal_crews": 3, "blocked_aircraft": 2,
     "passengers": 1284, "status": "active",
 }]
 
@@ -66,16 +66,27 @@ CREW_PROFILES = {
 # base and rest hours are real inputs to the FAR117/DGCA-style legality engine, so a
 # reassignment preview returns a genuine legal/illegal verdict — nothing is faked.
 CREW_ROSTER = [
+    # On-duty incumbents (three are illegal and drive the open recovery cases).
     {"id": "IC-184", "name": "Rohit Sharma", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "illegal", "duty_remaining": "-00:38", "rest_hours": 5, "assigned_flight": "AI421", "seniority": 8},
     {"id": "IC-811", "name": "Vikram Singh", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "illegal", "duty_remaining": "00:12", "rest_hours": 6, "assigned_flight": "UK945", "seniority": 6},
+    {"id": "IC-333", "name": "Meera Nair", "rank": "Captain", "base": "BOM", "qualifications": ["B787"], "status": "illegal", "duty_remaining": "-00:15", "rest_hours": 5, "assigned_flight": "AI807", "seniority": 14},
     {"id": "IC-072", "name": "Ananya Rao", "rank": "Captain", "base": "BLR", "qualifications": ["A320"], "status": "on_duty", "duty_remaining": "03:42", "rest_hours": 12, "assigned_flight": "6E203", "seniority": 11},
-    {"id": "IC-333", "name": "Meera Nair", "rank": "Captain", "base": "BOM", "qualifications": ["B787"], "status": "on_duty", "duty_remaining": "04:26", "rest_hours": 12, "assigned_flight": "AI807", "seniority": 14},
     {"id": "IC-590", "name": "Arjun Menon", "rank": "Captain", "base": "DEL", "qualifications": ["A320"], "status": "on_duty", "duty_remaining": "03:42", "rest_hours": 12, "assigned_flight": "6E531", "seniority": 9},
+    # Standby / reserve pool available for reassignment.
     {"id": "IC-205", "name": "Kabir Khan", "rank": "Captain", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "09:00", "rest_hours": 13, "assigned_flight": None, "seniority": 12},
     {"id": "IC-318", "name": "Priya Iyer", "rank": "Captain", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "10:30", "rest_hours": 14, "assigned_flight": None, "seniority": 15},
+    {"id": "IC-401", "name": "Aditya Verma", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "standby", "duty_remaining": "08:15", "rest_hours": 11, "assigned_flight": None, "seniority": 10},
+    {"id": "IC-419", "name": "Sneha Joshi", "rank": "First Officer", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "09:45", "rest_hours": 12, "assigned_flight": None, "seniority": 7},
+    {"id": "IC-533", "name": "Rahul Bose", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "reserve", "duty_remaining": "07:00", "rest_hours": 10, "assigned_flight": None, "seniority": 9},
+    {"id": "IC-612", "name": "Manish Gupta", "rank": "Captain", "base": "DEL", "qualifications": ["A320", "A321"], "status": "standby", "duty_remaining": "08:30", "rest_hours": 11, "assigned_flight": None, "seniority": 8},
+    {"id": "IC-688", "name": "Vivek Nair", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "standby", "duty_remaining": "09:10", "rest_hours": 12, "assigned_flight": None, "seniority": 13},
+    {"id": "IC-701", "name": "Imran Sheikh", "rank": "Captain", "base": "DEL", "qualifications": ["A320"], "status": "standby", "duty_remaining": "08:00", "rest_hours": 12, "assigned_flight": None, "seniority": 6},
+    {"id": "IC-655", "name": "Ritu Sharma", "rank": "First Officer", "base": "DEL", "qualifications": ["A320"], "status": "reserve", "duty_remaining": "07:20", "rest_hours": 13, "assigned_flight": None, "seniority": 5},
     {"id": "IC-442", "name": "Sana Ali", "rank": "First Officer", "base": "BLR", "qualifications": ["A320"], "status": "standby", "duty_remaining": "09:00", "rest_hours": 12, "assigned_flight": None, "seniority": 5},
-    {"id": "IC-507", "name": "Dev Patel", "rank": "Captain", "base": "BOM", "qualifications": ["B787", "A321"], "status": "reserve", "duty_remaining": "08:00", "rest_hours": 11, "assigned_flight": None, "seniority": 13},
     {"id": "IC-663", "name": "Neha Gupta", "rank": "First Officer", "base": "DEL", "qualifications": ["A321"], "status": "reserve", "duty_remaining": "07:30", "rest_hours": 9, "assigned_flight": None, "seniority": 4},
+    # B787 pool — deliberately thin: no legal option for AI807, so it must escalate to Tier 3.
+    {"id": "IC-507", "name": "Dev Patel", "rank": "Captain", "base": "BOM", "qualifications": ["B787", "A321"], "status": "reserve", "duty_remaining": "07:40", "rest_hours": 9, "assigned_flight": None, "seniority": 13},
+    {"id": "IC-560", "name": "Farah Naaz", "rank": "Captain", "base": "DEL", "qualifications": ["B787"], "status": "standby", "duty_remaining": "09:30", "rest_hours": 12, "assigned_flight": None, "seniority": 12},
 ]
 
 # Fleet: aircraft currently operating the disrupted flights plus available spares.
@@ -207,7 +218,13 @@ class RecoveryStore:
         for c in CREW_ROSTER:
             item=deepcopy(c)
             fl=on_flight.get(c["assigned_flight"] or "")
-            item["current_route"]=f'{fl["origin"]} → {fl["destination"]}' if fl else None
+            if fl:
+                item["current_route"]=f'{fl["origin"]} → {fl["destination"]}'
+                item["current_origin"]=fl["origin"]; item["current_destination"]=fl["destination"]
+                item["current_aircraft"]=fl["aircraft"]["type"]; item["current_gate"]=fl["gate"]
+                item["passengers"]=fl["passengers"]
+            else:
+                item["current_route"]=None
             items.append(item)
         return {"items":items,"provenance":deepcopy(DATA_PROVENANCE)}
 

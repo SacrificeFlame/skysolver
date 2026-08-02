@@ -37,6 +37,43 @@ tr.clickable{cursor:pointer}
 .scenario-strip{display:flex;align-items:center;gap:9px;padding:7px 22px;border-bottom:1px solid #23323c;background:#0c1922;color:#9fb2bd;font-size:11px}
 .scenario-strip strong{color:#cfe0ea;font-weight:600;letter-spacing:.02em}
 .scenario-strip .dot{width:7px;height:7px;border-radius:50%;background:#27c2d3;flex:0 0 auto;box-shadow:0 0 0 3px rgba(39,194,211,.15)}
+/* Scenario progress + status */
+.progressbar{position:relative;height:30px;border:1px solid #263640;border-radius:7px;background:#0d1a23;overflow:hidden;margin-bottom:14px}
+.progressbar.big{height:36px}
+.progressbar-fill{position:absolute;inset:0 auto 0 0;background:linear-gradient(90deg,#1d5c46,#2f8f5f);transition:width .4s ease}
+.progressbar span{position:relative;display:flex;align-items:center;height:100%;padding:0 14px;font-size:12px;font-weight:600;color:#dfe8ed}
+.banner-ok{display:flex;align-items:center;gap:9px;padding:10px 14px;margin-bottom:14px;border:1px solid #2f6d4a;border-radius:7px;background:#0e2318;color:#7fe0a8;font-size:12px}
+.banner-ok svg{width:15px}
+.kpi.danger strong{color:#ef6a6a}
+.kpi.success strong{color:#57d08a}
+.kpi.warning strong{color:#e7c15a}
+.kpi.purple strong{color:#b98af0}
+.mt{margin-top:14px}
+.caserow.done{cursor:default;opacity:.85}
+.mini-cases{display:grid;gap:7px}
+.mini-case{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid #223341;border-radius:6px;background:#0d1a23;font-size:12px}
+.mini-case .muted{flex:1}
+.dotstatus{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.dotstatus.open{background:#ef6a6a}
+.dotstatus.resolved{background:#57d08a}
+.dotstatus.escalated{background:#b98af0}
+.plan-lines{display:grid;gap:8px}
+.plan-line{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #2f6d4a;border-radius:7px;background:#0e2318;font-size:12px}
+.plan-line b{font-size:13px}
+.t3-options{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:11px;margin:12px 0}
+.t3opt{border:1px solid #263640;border-radius:8px;background:#0d1a23;padding:12px}
+.t3opt.ok{border-color:#2f6d4a}
+.t3opt header{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.gate-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.gate{display:flex;align-items:center;gap:11px;padding:13px 15px;border-radius:8px;border:1px solid #263640;background:#0d1a23}
+.gate svg{width:19px;height:19px;flex:0 0 auto}
+.gate.ok{border-color:#2f6d4a}
+.gate.ok svg{color:#57d08a}
+.gate.blocked{border-color:#7a6a2a}
+.gate.blocked svg{color:#e7c15a}
+.gate b{display:block;font-size:12px}
+.gate span{font-size:11px;color:#8598a3}
+.fact-strip.small span{font-size:10px}
 /* Interactive crew recovery */
 .crew3{display:grid;grid-template-columns:280px minmax(280px,1fr) minmax(320px,1.3fr);gap:14px;align-items:start}
 .crew3 .card{margin:0}
