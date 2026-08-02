@@ -333,7 +333,16 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.get("/dashboard", include_in_schema=False)
-    def dashboard(_: Principal = Depends(principal)):
+    def dashboard(
+        session: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None,
+        authorization: Annotated[str | None, Header()] = None,
+    ):
+        try:
+            principal(session, authorization)
+        except HTTPException as exc:
+            if exc.status_code == 401:
+                return RedirectResponse("/", status_code=303)
+            raise
         index = frontend / "index.html"
         return FileResponse(index, headers={"Cache-Control": "no-store"}) if index.is_file() else JSONResponse({"error": "frontend_not_built"}, status_code=503)
 
