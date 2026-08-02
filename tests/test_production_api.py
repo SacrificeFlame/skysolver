@@ -44,6 +44,20 @@ def test_api_requires_signed_identity():
     assert response.json()["detail"]["code"] == "authentication_required"
 
 
+def test_dashboard_redirects_anonymous_browser_to_login_without_weakening_api_auth():
+    instance = TestClient(create_app(), follow_redirects=False)
+    response = instance.get("/dashboard")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert instance.get("/api/v1/overview").status_code == 401
+
+
+def test_dashboard_is_served_after_demo_login():
+    response = client().get("/dashboard")
+    assert response.status_code == 200
+    assert "SkySolver OCC" in response.text
+
+
 def test_data_health_blocks_operational_deployment():
     response = client().get("/api/v1/data-health")
     assert response.status_code == 200
