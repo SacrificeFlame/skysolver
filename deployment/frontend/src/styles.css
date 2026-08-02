@@ -34,4 +34,10 @@ tr.clickable{cursor:pointer}
 .step.done{border-color:#2f6d4a}.step.done .s-state{color:#57d08a}
 .step.blocked{border-color:#7c3535}.step.blocked .s-state{color:#ef6a6a}
 .step.current{border-color:#27637a;box-shadow:inset 0 0 0 1px #27637a}
+.field{display:grid;gap:5px;margin:10px 0}
+.field span{font-size:11px;color:#8598a3}
+.field input{height:38px;padding:0 12px;border:1px solid #2a3b46;border-radius:6px;background:#0b1720;color:#e7edf2}
+.field input::placeholder{color:#5f717c}
+.step-flow .step .s-state{display:flex;align-items:center;gap:6px}
+.step-flow .step svg{width:14px;height:14px}
 @media (prefers-reduced-motion: reduce){.spin{animation:none!important}*{transition:none!important;animation-duration:.001ms!important;animation-iteration-count:1!important}}
