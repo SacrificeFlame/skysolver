@@ -44,3 +44,12 @@ class ObjectLockArtifactStore:
         head=self.s3.head_object(Bucket=reference.bucket,Key=reference.key,VersionId=reference.version_id)
         metadata=head.get("Metadata",{});mode=head.get("ObjectLockMode");kms=head.get("SSEKMSKeyId")
         return metadata.get("sha256")==reference.content_sha256 and mode=="COMPLIANCE" and kms==reference.kms_key_id
+    def get_verified(self,reference:ArtifactReference)->Any:
+        if not self.verify(reference):raise ArtifactIntegrityError("Artifact metadata, Object Lock or KMS binding is invalid")
+        response=self.s3.get_object(Bucket=reference.bucket,Key=reference.key,VersionId=reference.version_id)
+        body=response["Body"].read() if hasattr(response["Body"],"read") else response["Body"]
+        if not isinstance(body,(bytes,bytearray)):raise ArtifactIntegrityError("Artifact body is not bytes")
+        actual=hashlib.sha256(body).hexdigest()
+        if actual!=reference.content_sha256:raise ArtifactIntegrityError("Artifact content digest does not match immutable reference")
+        try:return json.loads(body)
+        except (UnicodeDecodeError,json.JSONDecodeError) as exc:raise ArtifactIntegrityError("Artifact is not canonical JSON") from exc

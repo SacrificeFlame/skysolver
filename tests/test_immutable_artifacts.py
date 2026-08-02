@@ -1,4 +1,4 @@
-from state.immutable_artifacts import ArtifactIntegrityError,ObjectLockArtifactStore
+from state.immutable_artifacts import ArtifactIntegrityError,ArtifactReference,ObjectLockArtifactStore
 
 
 class S3:
@@ -26,3 +26,14 @@ def test_tampered_metadata_fails_verification():
     s3=S3();store=ObjectLockArtifactStore(s3,"artifacts","kms-1");reference=store.put(tenant_id="a",recovery_id="r",artifact_type="validation",artifact_id="v",value={"legal":True})
     s3.put["Metadata"]["sha256"]="0"*64
     assert not store.verify(reference)
+
+
+def test_verified_read_rejects_body_tampering():
+    class Body:
+        def read(self):return b'{"different":true}'
+    class S3:
+        def head_object(self,**kwargs):return {"Metadata":{"sha256":"a"*64},"ObjectLockMode":"COMPLIANCE","SSEKMSKeyId":"kms-1"}
+        def get_object(self,**kwargs):return {"Body":Body()}
+    reference=ArtifactReference("bucket","key","v1","a"*64,"kms-1","future","candidate")
+    with __import__("pytest").raises(ArtifactIntegrityError,match="digest"):
+        ObjectLockArtifactStore(S3(),"bucket","kms-1").get_verified(reference)
