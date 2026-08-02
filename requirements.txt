@@ -3,6 +3,7 @@
 # Rules engine & solvers
 pydantic>=2.0
 pyomo>=6.4  # MILP formulation for Tier 2
+highspy>=1.8  # Embedded HiGHS runtime used by the Railway hackathon deployment
 
 # API & UI
 fastapi>=0.100

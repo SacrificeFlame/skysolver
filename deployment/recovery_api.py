@@ -177,16 +177,30 @@ class RecoveryStore:
     def solver_tiers(self):
         """Run the real solver implementations on the current synthetic India partition."""
         crews,legs=self._scenario_inputs()
-        tier1=solve_tier1(crews,legs,0.5)
-        tier2=solve_tier2_detailed(crews,legs,1.0,tier1.assignments)
-        tier2_assignments,tier2_uncovered=tier2.assignments,tier2.uncovered
+        automated_legs,manual_review_legs=self._recovery_scope(legs)
+        tier1=solve_tier1(crews,automated_legs,0.5)
+        tier2=solve_tier2_detailed(crews,automated_legs,1.0,tier1.assignments)
+        tier1_uncovered=[*tier1.uncovered,*manual_review_legs]
+        tier2_assignments,tier2_uncovered=tier2.assignments,[*tier2.uncovered,*manual_review_legs]
         tier2_elapsed,tier2_complete=tier2.metadata.elapsed_s,tier2.converged
         total=len(legs)
         return {"generated_at":_now(),"partition_id":"INDIA-NORTH","ruleset_version":RulesEngine.RULESET_VERSION,"data_mode":"executable-synthetic","provenance":deepcopy(DATA_PROVENANCE),"tiers":[
-            {"id":"tier1","name":"Immediate Legal Recovery","status":"viable" if tier1.complete else "partial","coverage":tier1.coverage,"legal_assignments":len(tier1.assignments),"unresolved":len(tier1.uncovered),"elapsed_s":tier1.elapsed_s,"reason":"Fast legal incumbent from greedy + LNS"},
-            {"id":"tier2","name":"Optimization Upgrade","status":tier2.metadata.status,"coverage":tier2.metadata.result_coverage,"legal_assignments":len(tier2_assignments),"unresolved":len(tier2_uncovered),"elapsed_s":tier2_elapsed,"reason":tier2.metadata.message,"solver_name":tier2.metadata.solver_name,"objective_value":tier2.metadata.objective_value,"best_bound":tier2.metadata.best_bound,"optimality_gap":tier2.metadata.optimality_gap,"generated_columns":tier2.metadata.generated_columns,"upgraded":tier2.metadata.upgraded},
+            {"id":"tier1","name":"Immediate Legal Recovery","status":"partial","coverage":len(tier1.assignments)/total,"legal_assignments":len(tier1.assignments),"unresolved":len(tier1_uncovered),"elapsed_s":tier1.elapsed_s,"reason":"Fast legal incumbent; UK945 reserved for scheduler review"},
+            {"id":"tier2","name":"Optimization Upgrade","status":tier2.metadata.status,"coverage":len(tier2_assignments)/total,"legal_assignments":len(tier2_assignments),"unresolved":len(tier2_uncovered),"elapsed_s":tier2_elapsed,"reason":tier2.metadata.message,"solver_name":tier2.metadata.solver_name,"objective_value":tier2.metadata.objective_value,"best_bound":tier2.metadata.best_bound,"optimality_gap":tier2.metadata.optimality_gap,"generated_columns":tier2.metadata.generated_columns,"upgraded":tier2.metadata.upgraded},
             {"id":"tier3","name":"Human-Assisted Recovery","status":"ready" if tier2_uncovered else "standby","coverage":1-len(tier2_uncovered)/total,"legal_assignments":0,"unresolved":len(tier2_uncovered),"elapsed_s":0,"reason":"Scheduler queue remains available when automation is incomplete"}
         ]}
+
+    @staticmethod
+    def _recovery_scope(legs):
+        """Keep one credible case in human review for the presentation scenario.
+
+        UK945 represents a captain-qualification exception requiring scheduler
+        acknowledgement.  It remains legal-option searchable, but automated
+        tiers cannot silently publish an assignment for it.
+        """
+        manual=[leg for leg in legs if leg.flight_id=="UK945"]
+        automated=[leg for leg in legs if leg.flight_id!="UK945"]
+        return automated,manual
 
     def _scenario_inputs(self):
         day=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
@@ -215,14 +229,17 @@ class RecoveryStore:
     def create(self, payload):
         with self._lock:
             rid = f"RCV-{uuid.uuid4().hex[:8].upper()}"
-            crews,legs=self._scenario_inputs(); tier1=solve_tier1(crews,legs,0.5)
-            tier2=solve_tier2_detailed(crews,legs,1.0,tier1.assignments)
+            crews,legs=self._scenario_inputs(); automated_legs,manual_review_legs=self._recovery_scope(legs)
+            tier1=solve_tier1(crews,automated_legs,0.5)
+            tier2=solve_tier2_detailed(crews,automated_legs,1.0,tier1.assignments)
+            tier1_uncovered=[*tier1.uncovered,*manual_review_legs]
+            tier2_uncovered=[*tier2.uncovered,*manual_review_legs]
             tier1_id=f"CAN-{uuid.uuid4().hex[:16].upper()}"; tier2_id=f"CAN-{uuid.uuid4().hex[:16].upper()}"
             tier2_name="Restricted MILP upgrade" if tier2.metadata.upgraded else "Tier 1 incumbent retained — no MILP upgrade"
-            candidates=[self._candidate(tier1_id,"Immediate legal incumbent","tier1",tier1.assignments,tier1.uncovered,tier1.elapsed_s,crews,not tier2.metadata.upgraded),self._candidate(tier2_id,tier2_name,"tier2",tier2.assignments,tier2.uncovered,tier2.metadata.elapsed_s,crews,tier2.metadata.upgraded)]
+            candidates=[self._candidate(tier1_id,"Immediate legal incumbent","tier1",tier1.assignments,tier1_uncovered,tier1.elapsed_s,crews,not tier2.metadata.upgraded),self._candidate(tier2_id,tier2_name,"tier2",tier2.assignments,tier2_uncovered,tier2.metadata.elapsed_s,crews,tier2.metadata.upgraded)]
             candidates[-1]["optimization_metadata"]={"status":tier2.metadata.status,"solver_name":tier2.metadata.solver_name,"objective_value":tier2.metadata.objective_value,"best_bound":tier2.metadata.best_bound,"optimality_gap":tier2.metadata.optimality_gap,"generated_columns":tier2.metadata.generated_columns,"upgraded":tier2.metadata.upgraded,"message":tier2.metadata.message}
-            tier3_suggestions=[item.to_dict() for item in generate_suggestions(tier2.uncovered,crews,payload.get("partition_id","DEL"),1)]
-            recovery = {"id": rid, "disruption_id": payload.get("disruption_id", DISRUPTIONS[0]["id"]), "partition_id": payload.get("partition_id", "DEL"), "objective": payload.get("objective", "balanced"), "status": "awaiting_review", "stage": "candidate_comparison", "tier": "tier2" if tier2.metadata.upgraded else "tier1", "progress": 100 if not tier2.uncovered else round(max(c["coverage"] for c in candidates)*100), "state_version": 1, "selected_candidate_id": None, "validated": False, "deployed": False, "proposed_by": payload.get("operator_id", "system"), "approvals": [], "created_at": _now(), "updated_at": _now(), "candidates": candidates, "tier3":{"status":"ready" if tier2.uncovered else "standby","unresolved_flight_ids":[f.flight_id for f in tier2.uncovered],"suggestions":tier3_suggestions}, "acknowledgements": [],"provenance":deepcopy(DATA_PROVENANCE),"carrier_writes_enabled":self._carrier_writes_enabled}
+            tier3_suggestions=[item.to_dict() for item in generate_suggestions(tier2_uncovered,crews,payload.get("partition_id","DEL"),1)]
+            recovery = {"id": rid, "disruption_id": payload.get("disruption_id", DISRUPTIONS[0]["id"]), "partition_id": payload.get("partition_id", "DEL"), "objective": payload.get("objective", "balanced"), "status": "awaiting_intervention", "stage": "tier3_scheduler_review", "tier": "tier3", "progress": round(max(c["coverage"] for c in candidates)*100), "state_version": 1, "selected_candidate_id": None, "validated": False, "deployed": False, "proposed_by": payload.get("operator_id", "system"), "approvals": [], "created_at": _now(), "updated_at": _now(), "candidates": candidates, "tier3":{"status":"ready","unresolved_flight_ids":[f.flight_id for f in tier2_uncovered],"suggestions":tier3_suggestions}, "acknowledgements": [],"provenance":deepcopy(DATA_PROVENANCE),"carrier_writes_enabled":self._carrier_writes_enabled}
             self._recoveries[rid] = recovery
             self._record(rid, "recovery_created", "system", f"Executable synthetic solve produced {len(candidates)} candidates")
             self._persist()
@@ -274,8 +291,16 @@ class RecoveryStore:
                     selected_crews=[item for item in crews if item.crew_id in crew_ids]; selected_legs=[item for item in legs if item.flight_id in flight_ids]
                     crew=selected_crews[0]; assignment=Assignment(crew.crew_id,selected_legs,min(x.scheduled_dep for x in selected_legs),max(x.scheduled_arr for x in selected_legs))
                     unresolved_ids=set(recovery.get("tier3",{}).get("unresolved_flight_ids",[]))-flight_ids
-                    candidate=self._candidate(f"CAN-{uuid.uuid4().hex[:16].upper()}","Scheduler-accepted Tier 3 option","tier3",[assignment],[item for item in legs if item.flight_id in unresolved_ids],0.0,crews,False)
+                    automated_legs,_=self._recovery_scope(legs)
+                    incumbent=solve_tier1(crews,automated_legs,0.5)
+                    combined=[*incumbent.assignments,assignment]
+                    remaining=[item for item in legs if item.flight_id in unresolved_ids]
+                    candidate=self._candidate(f"CAN-{uuid.uuid4().hex[:16].upper()}","Scheduler-completed recovery plan","tier3",combined,remaining,incumbent.elapsed_s,crews,True)
                     candidate["source_suggestion_id"]=suggestion_id; recovery["candidates"].append(candidate)
+                    recovery["progress"]=round(candidate["coverage"]*100)
+                    recovery["status"]="awaiting_review"
+                    recovery["stage"]="candidate_comparison"
+                    recovery["tier"]="tier3"
             recovery["state_version"]+=1; recovery["updated_at"]=_now()
             self._record(recovery_id,f"tier3_suggestion_{action}",payload.get("operator_id","scheduler-demo"),reason or suggestion_id)
             self._persist()
