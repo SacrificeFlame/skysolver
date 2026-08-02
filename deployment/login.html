@@ -14,26 +14,33 @@
       display: grid;
       place-items: center;
     }
+    * { box-sizing: border-box; }
     .card {
-      width: min(92vw, 420px);
-      padding: 28px;
-      border-radius: 14px;
-      background: rgba(8, 19, 31, 0.9);
-      border: 1px solid rgba(172,237,255,0.25);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+      width: min(92vw, 400px);
+      padding: 34px 32px 30px;
+      border-radius: 16px;
+      background: rgba(8, 19, 31, 0.92);
+      border: 1px solid rgba(172,237,255,0.18);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.45);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
     }
-    h1 { margin-top: 0; font-size: 24px; }
-    .muted { color: #74a5bd; font-size: 13px; }
-    label { display: block; margin-top: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
-    input { width: 100%; padding: 10px 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #27445a; background: #091724; color: white; }
-    button { width: 100%; padding: 10px 12px; margin-top: 16px; border: none; border-radius: 8px; background: linear-gradient(90deg, #4cd7f6, #4ae176); color: #031018; font-weight: 700; cursor: pointer; }
-    .error { color: #ff9e9e; margin-top: 10px; font-size: 13px; display: none; }
-    .brand { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 2px 0 4px; }
-    .muted { text-align: center; margin-bottom: 6px; }
-    .brand svg { filter: drop-shadow(0 3px 10px rgba(56,207,228,.3)); }
-    .brand .wm { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-    .brand .wm strong { font-size: 24px; font-weight: 800; letter-spacing: .16em; color: #eef4fb; }
+    .brand { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .brand svg { filter: drop-shadow(0 3px 12px rgba(56,207,228,.32)); }
+    .brand .wm { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+    .brand .wm strong { font-size: 25px; font-weight: 800; letter-spacing: .18em; color: #eef4fb; }
     .brand .wm span { font-size: 10px; font-weight: 700; letter-spacing: .5em; color: #4bd7ea; padding-left: .5em; }
+    .muted { color: #7fa2ba; font-size: 12.5px; line-height: 1.5; text-align: center; margin: 14px 0 22px; }
+    .field { display: flex; flex-direction: column; gap: 7px; margin-bottom: 15px; text-align: left; }
+    label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #6f8aa0; }
+    input { width: 100%; height: 44px; padding: 0 14px; border-radius: 9px; border: 1px solid #27445a; background: #0a1826; color: #eef7ff; font-size: 14px; }
+    input::placeholder { color: #4f6a7e; }
+    input:focus { outline: none; border-color: #38cfe4; box-shadow: 0 0 0 3px rgba(56,207,228,.15); }
+    button { width: 100%; height: 46px; margin-top: 6px; border: none; border-radius: 9px; background: linear-gradient(90deg, #38cfe4, #3ecf8e); color: #041018; font-weight: 800; font-size: 14px; letter-spacing: .02em; cursor: pointer; }
+    button:hover { filter: brightness(1.06); }
+    .error { color: #ff9e9e; margin-top: 12px; font-size: 13px; text-align: center; display: none; }
+    .hint { margin-top: 16px; text-align: center; font-size: 10.5px; color: #4f6577; letter-spacing: .04em; }
   </style>
 </head>
 <body>
@@ -57,16 +64,18 @@
       </svg>
       <div class="wm"><strong>SKYSOLVER</strong><span>KINETIC</span></div>
     </div>
-    <div class="muted">Sign in to review recovery operations, passenger reaccommodation, and disruption telemetry.</div>
-    <label>Username</label>
-    <input id="username" value="ops" />
-    <label>Password</label>
-    <input id="password" type="password" value="sky2026" />
-    <button onclick="submitLogin()">Sign In</button>
+    <div class="muted">Sign in to review recovery operations, passenger reaccommodation and disruption telemetry.</div>
+    <form onsubmit="submitLogin(event)" autocomplete="off">
+      <div class="field"><label for="username">Username</label><input id="username" name="username" placeholder="Operator ID" autocomplete="off" autofocus /></div>
+      <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" placeholder="••••••••" autocomplete="new-password" /></div>
+      <button type="submit">Sign In</button>
+    </form>
     <div id="error" class="error"></div>
+    <div class="hint">Authorized operations personnel only</div>
   </div>
   <script>
-    async function submitLogin() {
+    async function submitLogin(event) {
+      if (event) event.preventDefault();
       const username = document.getElementById('username').value;
       const password = document.getElementById('password').value;
       const errorEl = document.getElementById('error');
