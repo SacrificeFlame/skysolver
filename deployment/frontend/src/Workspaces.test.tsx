@@ -33,8 +33,8 @@ describe('Solver tier workspace truthful states',()=>{
   await screen.findByText(/no result is fabricated/i);
   expect(screen.getByText(/No certified gap/i)).toBeTruthy();
  });
- it('shows an error state when telemetry is unauthorized',async()=>{
-  vi.stubGlobal('fetch',vi.fn(()=>fail(401,{detail:{code:'authentication_required'}})));
+ it('shows an error state when telemetry fails',async()=>{
+  vi.stubGlobal('fetch',vi.fn(()=>fail(500,{message:'solver error'})));
   render(<SolverWorkspace onOpen={()=>{}}/>);
   await screen.findByText(/Solver telemetry unavailable/i);
  });
