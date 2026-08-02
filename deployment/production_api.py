@@ -58,6 +58,12 @@ class ReassignmentPreviewRequest(BaseModel):
     crew_id: str = Field(min_length=1, max_length=64)
 
 
+class AuditNoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str = Field(min_length=1, max_length=64)
+    detail: str = Field(default="", max_length=280)
+
+
 class DecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidate_id: str
@@ -342,6 +348,10 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
     @app.get("/api/v1/audit")
     def audit(_: Principal = Depends(principal)):
         return {"items": recovery_store.audit(), "storage": "mutable-local-demo", "immutable": False}
+
+    @app.post("/api/v1/audit")
+    def audit_note(body: AuditNoteRequest, actor: Principal = Depends(principal)):
+        return recovery_store.note(body.action, actor.subject, body.detail)
 
     @app.get("/api/v1/search")
     def search(q: str = Query(min_length=2, max_length=80), _: Principal = Depends(principal)):

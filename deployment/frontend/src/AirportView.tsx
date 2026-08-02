@@ -49,13 +49,14 @@ function StatusPill({x,y,state,name}:{x:number;y:number;state:GroundState;name:s
  </g>;
 }
 
-export default function AirportView({flights,cases,onSelect}:{flights:Flight[];cases:ScenarioCase[];onSelect?:(f:Flight)=>void}){
+export default function AirportView({flights,cases,onSelect,deployed=false}:{flights:Flight[];cases:ScenarioCase[];onSelect?:(f:Flight)=>void;deployed?:boolean}){
  const byId=(id:string)=>flights.find(f=>f.id===id);
  const caseOf=(id:string)=>cases.find(c=>c.flight===id);
  const reduce=reduceMotion();
  const departures=[['AI421',96],['UK945',176],['6E531',256]] as [string,number][];
  const inbounds=[['AI807',150],['6E203',66]] as [string,number][];
  return <div className="airport-wrap">
+  {deployed&&<div className="map-flash">✈ DEPLOYED — AIRCRAFT RELEASED, DEPARTING</div>}
   <svg viewBox="0 0 960 520" role="img" aria-label="Delhi airport operational view: gates, taxiways, runway 28 and inbound traffic" preserveAspectRatio="xMidYMid meet">
    <defs>
     <linearGradient id="apron" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#0e1830"/><stop offset="1" stopColor="#0a1122"/></linearGradient>
@@ -120,6 +121,9 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
     <Traveller path="M950 40 C 852 132 700 224 548 300" dur={15} begin={0} color="#7fd6e2" reduce={reduce} rest={[720,190]}/>
     <Traveller path="M950 104 C 858 178 706 258 560 320" dur={19} begin={6} color="#63b9c8" reduce={reduce} rest={[770,235]}/>
     <Traveller path="M300 476 C 430 402 566 322 786 196 L946 118" dur={17} begin={3} color="#3ecf8e" reduce={reduce} rest={[560,318]}/>
+    {deployed&&<><Traveller path="M120 300 C 320 282 520 238 760 150 L950 92" dur={9} begin={0} color="#57d08a" reduce={reduce} rest={[760,150]}/>
+    <Traveller path="M120 220 C 340 214 540 188 780 128 L950 74" dur={11} begin={2} color="#57d08a" reduce={reduce} rest={[780,128]}/>
+    <Traveller path="M120 380 C 360 344 580 292 810 186 L950 118" dur={10} begin={4} color="#57d08a" reduce={reduce} rest={[810,186]}/></>}
    </g>
    <g transform="translate(66 486)"><circle r="4" cx="4" cy="-3" fill="#e7c15a" opacity=".9"/><text x="14" y="0" fontSize="9" fontWeight="700" fill="#e7c15a" style={{letterSpacing:'.07em'}}>LVP ACTIVE — CAT III MINIMA</text></g>
   </svg>

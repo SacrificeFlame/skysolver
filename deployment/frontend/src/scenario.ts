@@ -36,10 +36,12 @@ export function useScenario(){
  const spares=useMemo(()=>roster.filter(c=>!c.assigned_flight),[roster]);
  const availableFor=useCallback((_c:ScenarioCase)=>spares.filter(s=>!usedCrew.has(s.id)),[spares,usedCrew]);
  const patch=(flight:string,p:Partial<ScenarioCase>)=>setCases(cs=>cs.map(c=>c.flight===flight?{...c,...p}:c));
- const reassign=(flight:string,crew:CrewRosterEntry)=>patch(flight,{status:'resolved',replacementId:crew.id,replacementName:crew.name,resolvedVia:'reassign'});
- const overrideAssign=(flight:string,crew:CrewRosterEntry)=>patch(flight,{status:'resolved',replacementId:crew.id,replacementName:crew.name,resolvedVia:'override'});
- const escalate=(flight:string)=>patch(flight,{status:'escalated',replacementId:undefined,replacementName:undefined,resolvedVia:undefined});
- const reopen=(flight:string)=>patch(flight,{status:'open',replacementId:undefined,replacementName:undefined,resolvedVia:undefined});
+ const log=(action:string,detail:string)=>{api.note(action,detail).catch(()=>{})};
+ const inc=(flight:string)=>cases.find(c=>c.flight===flight)?.incumbentId||'';
+ const reassign=(flight:string,crew:CrewRosterEntry)=>{patch(flight,{status:'resolved',replacementId:crew.id,replacementName:crew.name,resolvedVia:'reassign'});log('crew_reassigned',`${flight}: ${inc(flight)} → ${crew.id} (${crew.name}) — legal`)};
+ const overrideAssign=(flight:string,crew:CrewRosterEntry)=>{patch(flight,{status:'resolved',replacementId:crew.id,replacementName:crew.name,resolvedVia:'override'});log('supervisor_override',`${flight}: ${crew.id} (${crew.name}) accepted with documented residual risk`)};
+ const escalate=(flight:string)=>{patch(flight,{status:'escalated',replacementId:undefined,replacementName:undefined,resolvedVia:undefined});log('case_escalated',`${flight} escalated to Tier 3 human review — no legal automated option`)};
+ const reopen=(flight:string)=>{patch(flight,{status:'open',replacementId:undefined,replacementName:undefined,resolvedVia:undefined});log('case_reopened',`${flight} returned to crew recovery`)};
  const stats=useMemo(()=>{const total=cases.length,resolved=cases.filter(c=>c.status==='resolved').length,escalated=cases.filter(c=>c.status==='escalated').length,open=cases.filter(c=>c.status==='open').length,pax=cases.reduce((s,c)=>s+c.passengers,0),paxResolved=cases.filter(c=>c.status==='resolved').reduce((s,c)=>s+c.passengers,0);return{total,open,resolved,escalated,pax,paxResolved,coverage:total?resolved/total:0};},[cases]);
  return{loading,error,roster,cases,usedCrew,spares,reload:load,reset:load,availableFor,reassign,overrideAssign,escalate,reopen,stats};
 }

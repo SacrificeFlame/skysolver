@@ -13,6 +13,7 @@ export default function DataHealthWorkspace(){
  return <>
   <header className="page-head"><div><span>OPERATIONS DATA HEALTH</span><h1>Source readiness &amp; operation gates</h1><p>Freshness, contract, dead-letter and reconciliation checks independently gate solving and carrier publication.</p></div><div className="page-actions"><button onClick={load}><RefreshCw/> Refresh</button></div></header>
   <div className="kpis">{tiles.map(([k,v,tone,sub])=><div className={`kpi ${tone}`} key={k}><span>{k}</span><strong>{v}</strong><small>{sub}</small></div>)}</div>
+  <div className="dh-note"><Database/><span>This scenario runs on a single <b>synthetic feed</b>, deliberately marked non-authoritative — that is what keeps live carrier publication gated. Solving, optimization and plan comparison are fully available; the deployment you run here is a governed <b>shadow</b> against synthetic adapters, not a live carrier write.</span></div>
   <div className="gate-row">
    <div className={`gate ${data.solve_allowed?'ok':'blocked'}`}>{data.solve_allowed?<CheckCircle2/>:<AlertTriangle/>}<div><b>Solve gate</b><span>{data.solve_allowed?'Open — solver may generate recovery plans':'Blocked — inputs unsafe for solving'}</span></div></div>
    <div className={`gate ${data.deployment_allowed?'ok':'blocked'}`}>{data.deployment_allowed?<CheckCircle2/>:<ShieldCheck/>}<div><b>Publication gate</b><span>{data.deployment_allowed?'Open — plans may be published to carrier systems':'Closed — publication requires authoritative, fresh feeds'}</span></div></div>

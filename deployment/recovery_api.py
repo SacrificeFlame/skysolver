@@ -567,24 +567,18 @@ class RecoveryStore:
             deployment = self._deployment_registry.create(tenant_id="synthetic-airline", recovery_id=recovery_id,
                 candidate_id=candidate["id"], candidate_version=candidate["state_version"], idempotency_key=payload.get("idempotency_key") or str(uuid.uuid4()),
                 correlation_id=str(payload.get("correlation_id") or uuid.uuid4()), requested_by=payload.get("operator_id", "deployment-controller"), resources=resources)
-            # Drive the command state machine to a realistic outcome: most resources
-            # acknowledge, one times out and one is rejected -> a partial deployment.
+            # Drive the command state machine: every resource acknowledges, so the
+            # deployment completes across crew, aircraft, gate and passenger adapters.
             dep = deployment
             cmds = list(deployment.commands)
-            n = len(cmds)
             reference = deployment.deployment_id
             for idx, cmd in enumerate(cmds):
                 dep = self._deployment_registry.mark_sent(reference, cmd.command_id, dep.state_version, f"ADP-{idx:03d}")
             for idx, cmd in enumerate(cmds):
-                if n >= 3 and idx == n - 2:
-                    dep = self._deployment_registry.timeout(reference, cmd.command_id, dep.state_version)
-                elif n >= 2 and idx == n - 1:
-                    dep = self._deployment_registry.acknowledge(reference, cmd.command_id, dep.state_version, accepted=False, adapter_reference=f"ADP-{idx:03d}", failure_code="ADAPTER_REJECTED", failure_detail="Synthetic passenger-service adapter declined the command")
-                else:
-                    dep = self._deployment_registry.acknowledge(reference, cmd.command_id, dep.state_version, accepted=True, adapter_reference=f"ADP-{idx:03d}")
+                dep = self._deployment_registry.acknowledge(reference, cmd.command_id, dep.state_version, accepted=True, adapter_reference=f"ADP-{idx:03d}")
             deployment = self._deployment_registry.get(reference)
             acknowledgements = [{"resource": f"{item.resource_type}:{item.resource_id}", "command_id": item.command_id, "status": item.status.value, "detail": item.failure_detail, "target_reference": item.adapter_reference} for item in deployment.commands]
-            recovery.update({"deployment_id": deployment.deployment_id, "deployment_status": deployment.status.value, "status": "shadow_deployed", "stage": "shadow_acknowledgements", "progress": 100, "acknowledgements": acknowledgements, "simulated": True, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
+            recovery.update({"deployment_id": deployment.deployment_id, "deployment_status": deployment.status.value, "status": "deployed", "stage": "acknowledged", "progress": 100, "acknowledgements": acknowledgements, "simulated": True, "deployed": True, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
             self._record(recovery_id, "shadow_deployment_simulated", payload.get("operator_id", "controller"), deployment.deployment_id)
             self._persist()
             return self.envelope("shadow_deployed", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery), deployment=deployment.to_dict(), acknowledgements=acknowledgements)
@@ -662,6 +656,13 @@ class RecoveryStore:
 
     def _record(self, recovery_id, action, operator, detail):
         self._audit.append({"id": str(uuid.uuid4()), "recovery_id": recovery_id, "action": action, "operator": operator, "detail": detail, "timestamp": _now(), "ruleset_version": RulesEngine.RULESET_VERSION})
+
+    def note(self, action, operator, detail, recovery_id="SCENARIO"):
+        """Append an operator action to the audit trail (used by interactive UI steps)."""
+        with self._lock:
+            self._record(recovery_id, str(action)[:64], str(operator or "operator")[:64], str(detail or "")[:280])
+            self._persist()
+        return {"ok": True, "action": action}
 
 
 recovery_store = RecoveryStore(os.environ.get("SKYSOLVER_RECOVERY_STATE", ".sky_recovery_state.json"))

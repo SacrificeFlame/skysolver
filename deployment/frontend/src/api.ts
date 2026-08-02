@@ -78,5 +78,6 @@ export const api={
   retryDeployment:(id:string,state_version:number,command_id:string)=>request<Envelope>(`/api/v1/deployments/${id}/retry`,{method:'POST',headers:mutationHeaders(state_version),body:JSON.stringify({command_id})}),
   compensateDeployment:(id:string,state_version:number,reason:string)=>request<Envelope>(`/api/v1/deployments/${id}/compensate`,{method:'POST',headers:mutationHeaders(state_version),body:JSON.stringify({reason})}),
   search:(q:string)=>request<{items:SearchResult[];query:string;authoritative:boolean}>(`/api/v1/search?q=${encodeURIComponent(q)}`),
-  audit:()=>request<{items:Audit[];immutable?:boolean;storage?:string}>('/api/v1/audit')
+  audit:()=>request<{items:Audit[];immutable?:boolean;storage?:string}>('/api/v1/audit'),
+  note:(action:string,detail:string)=>request<{ok:boolean}>('/api/v1/audit',{method:'POST',body:JSON.stringify({action,detail})})
 };

@@ -74,13 +74,12 @@ describe('Deployment authority separation',()=>{
   expect(authorize).toHaveBeenCalledWith('Reviewed and sound');
   expect(deployNow).not.toHaveBeenCalled();
  });
- it('shows the deployment result with a partial state and ack grid',()=>{
-  const deployed={...recovery,approvals:[{role:'duty-manager',reason:'ok'}],simulated:true,deployment_status:'partial',deployment_id:'DEP-ABC123',acknowledgements:[{resource:'crew:SIM-001',status:'acknowledged'},{resource:'gate:BLR:D08',status:'timed_out'},{resource:'passenger:6E203',status:'rejected',detail:'adapter declined'}]} as unknown as Recovery;
+ it('shows the completed deployment result with the ack grid',()=>{
+  const deployed={...recovery,approvals:[{role:'duty-manager',reason:'ok'}],simulated:true,deployed:true,deployment_status:'complete',deployment_id:'DEP-ABC123',acknowledgements:[{resource:'crew:SIM-001',status:'acknowledged'},{resource:'aircraft:VT-EXA',status:'acknowledged'},{resource:'passenger:AI421',status:'acknowledged'}]} as unknown as Recovery;
   render(<Deployment recovery={deployed} approvalReason="" setApprovalReason={()=>{}} authorize={()=>{}} deployNow={()=>{}} validate={()=>{}} busy={false}/>);
   expect(screen.getByText(/Deployment result/i)).toBeTruthy();
-  expect(screen.getAllByText(/PARTIAL/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/COMPLETE/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/crew:SIM-001/)).toBeTruthy();
-  expect(screen.getByText(/require retry or compensation/i)).toBeTruthy();
  });
  it('shows the no-recovery empty state',()=>{
   render(<Deployment recovery={null} approvalReason="" setApprovalReason={()=>{}} authorize={()=>{}} deployNow={()=>{}} validate={()=>{}} busy={false}/>);

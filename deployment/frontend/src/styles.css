@@ -358,3 +358,28 @@ tr.clickable:hover td{background:#131f3a}
 .banner-warn{display:flex;align-items:center;gap:9px;margin-top:12px;padding:10px 14px;border:1px solid #7a5a2a;border-radius:9px;background:#241a0e;color:#f0c98a;font-size:12px}
 .banner-warn svg{width:15px;height:15px;flex:0 0 auto}
 .footnote{margin-top:16px;opacity:.75}
+/* Batch fixes: readable narrative cards, sidebar footer, passenger + data-health */
+.narrative h2{text-transform:none;letter-spacing:-.01em;font-size:16px;font-weight:650;color:#eef4fb;display:flex;align-items:center;gap:8px;margin:0 0 8px}
+.narrative h2 svg{width:16px;height:16px;color:var(--accent)}
+.narrative p{font-size:12.5px;line-height:1.6;max-width:720px;color:#b7c4d8;margin:0 0 8px}
+.narrative .run-note{font-size:11px;color:#8fa2ad;border-left:2px solid #2a3a5e;padding-left:11px;margin-top:12px}
+.side-foot{gap:3px}
+.side-foot span{font-size:10px;color:#8fa2ad;letter-spacing:.06em}
+.side-foot small{color:#5d6d8a}
+/* Passenger impact */
+.pax-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:11px}
+.pax-card{border:1px solid var(--hair);border-radius:10px;background:var(--panel2);padding:13px 15px}
+.pax-card .pf{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.pax-card .pf b{font-size:13px}
+.pax-bar{height:7px;border-radius:4px;background:#182848;overflow:hidden;margin:8px 0 6px}
+.pax-bar>span{display:block;height:100%;background:linear-gradient(90deg,#1c7d5a,#3ecf8e)}
+.pax-bar.risk>span{background:linear-gradient(90deg,#b3742a,#f0b24a)}
+.pax-meta{display:flex;justify-content:space-between;font-size:10px;color:#8494b2}
+/* Data health explainer */
+.dh-note{display:flex;gap:10px;align-items:flex-start;padding:12px 15px;margin-bottom:14px;border:1px solid #26415c;border-radius:10px;background:#0e1d34;color:#a9bdd8;font-size:12px;line-height:1.5}
+.dh-note svg{width:16px;height:16px;color:var(--accent);flex:0 0 auto;margin-top:1px}
+.map-flash{position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:2;display:flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px;background:rgba(30,138,94,.92);color:#eafff5;font-size:11px;font-weight:700;letter-spacing:.06em;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.airport-wrap{position:relative}
+
+.map-caption{padding:8px 14px;border-top:1px solid #1e3038;color:#9fb2bd;font-size:11px;background:#0c1728}
+.crew-node circle{opacity:.9}
