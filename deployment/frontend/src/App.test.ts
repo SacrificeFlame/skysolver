@@ -1,5 +1,5 @@
 import{afterEach,describe,expect,it,vi}from'vitest';
-import{describeFailure}from'./App';
+import{ackClass,describeFailure}from'./App';
 import{ApiError}from'./api';
 import type{Recovery}from'./types';
 
@@ -32,5 +32,23 @@ describe('describeFailure operator messaging',()=>{
  it('falls back to plain error and unknown messages',()=>{
   expect(describeFailure(new Error('plain'),recovery,noop)).toBe('plain');
   expect(describeFailure('weird',recovery,noop)).toBe('Action failed');
+ });
+});
+
+describe('deployment acknowledgement classification',()=>{
+ it('maps positive acknowledgements to ok',()=>{
+  expect(ackClass('ACK')).toBe('ok');
+  expect(ackClass('acknowledged')).toBe('ok');
+  expect(ackClass('confirmed')).toBe('ok');
+ });
+ it('maps failures to bad and partial to part',()=>{
+  expect(ackClass('NACK')).toBe('bad');
+  expect(ackClass('failed')).toBe('bad');
+  expect(ackClass('partial')).toBe('part');
+ });
+ it('treats timeout / pending / unknown as waiting rather than success',()=>{
+  expect(ackClass('timeout')).toBe('wait');
+  expect(ackClass('pending')).toBe('wait');
+  expect(ackClass('')).toBe('wait');
  });
 });
