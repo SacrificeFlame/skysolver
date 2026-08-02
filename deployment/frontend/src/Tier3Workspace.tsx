@@ -1,14 +1,23 @@
-import{useEffect,useState}from'react';
-import{AlertTriangle,Check,Clock3,RefreshCw,ShieldCheck,Users}from'lucide-react';
-import{api}from'./api';
-import type{Recovery,Tier3Queue,Tier3Suggestion}from'./types';
+import{AlertTriangle,Check,ShieldCheck}from'lucide-react';
+import{checkLegality}from'./scenario';
+import type{Scenario}from'./scenario';
 
-export default function Tier3Workspace({recovery,onRecovery,onStart}:{recovery:Recovery|null;onRecovery:(r:Recovery)=>void;onStart:()=>void}){
- const[queue,setQueue]=useState<Tier3Queue|null>(null),[busy,setBusy]=useState(''),[error,setError]=useState('');
- const load=()=>{if(!recovery)return;setError('');api.tier3Suggestions(recovery.id).then(setQueue).catch(e=>setError(e.message))};
- useEffect(load,[recovery?.id,recovery?.state_version]);
- const act=async(s:Tier3Suggestion,action:'approve'|'reject'|'hold')=>{if(!recovery)return;const reason=action==='approve'?'Accepted for candidate generation':`${action==='hold'?'Held for supervisor review':'Rejected by scheduler'}`;setBusy(s.suggestion_id+action);setError('');try{const result=await api.decideTier3(recovery.id,s.suggestion_id,recovery.state_version,action,reason);onRecovery(result.recovery)}catch(e){setError(e instanceof Error?e.message:'Tier 3 action failed')}finally{setBusy('')}};
- if(!recovery)return <section className="empty"><Users/><h2>No active recovery</h2><p>Run the synthetic recovery first. Tier 3 is generated from cases that remain unresolved after automated tiers.</p><button className="primary" onClick={onStart}>Start recovery</button></section>;
- if(error&&!queue)return <section className="empty"><AlertTriangle/><h2>Tier 3 queue unavailable</h2><p>{error}</p><button onClick={load}>Retry</button></section>;
- return <><header className="page-head"><div><span>TIER 3 · HUMAN-ASSISTED RECOVERY</span><h1>Scheduler suggestion queue</h1><p>Legality-gated options require explicit review. Accepting an option creates a candidate; it does not approve or deploy it.</p></div><div className="page-actions"><span className="badge purple">{queue?.status?.toUpperCase()||'LOADING'}</span><button onClick={load}><RefreshCw/> Refresh</button></div></header>{error&&<div className="provenance"><AlertTriangle/><span><strong>Action not completed</strong><small>{error}</small></span></div>}{!queue?<section className="empty"><RefreshCw className="spin"/><h2>Loading queue</h2></section>:queue.items.length===0?<section className="empty"><ShieldCheck/><h2>No unresolved suggestions</h2><p>Automated tiers covered the current synthetic cases. Tier 3 remains available but has nothing requiring scheduler intervention.</p></section>:<div className="candidate-grid">{queue.items.map(s=><article className="candidate" key={s.suggestion_id}><header><span className="badge purple">RANK {s.rank}</span><strong>{s.status.replaceAll('_',' ').toUpperCase()}</strong></header><h2>{s.proposed_flight_ids.join(', ')}</h2><div className="score">{Math.round(s.confidence*100)}%<span>rule-based confidence</span></div><div className="candidate-metrics"><span>Crew<b>{s.crew_id}</b></span><span>Duty cost<b>{s.duty_time_cost.toFixed(1)}h</b></span><span>Benefit<b>{Math.round(s.operational_benefit*100)}%</b></span></div><div className="explain"><strong>Why this option</strong><p>{s.explanation}</p><small>{s.ruleset_version} · state v{s.state_version}</small></div>{s.residual_risks.map(r=><p key={r}><AlertTriangle/> {r}</p>)}{s.status==='pending'&&<div className="page-actions"><button disabled={!!busy} onClick={()=>act(s,'reject')}>Reject</button><button disabled={!!busy} onClick={()=>act(s,'hold')}><Clock3/> Hold</button><button className="primary" disabled={!!busy} onClick={()=>act(s,'approve')}><Check/> Accept as candidate</button></div>}</article>)}</div>}</>
+export default function Tier3Workspace({scenario,go}:{scenario:Scenario;go:(r:'crew')=>void}){
+ const{cases,availableFor,overrideAssign,reassign,reopen}=scenario;
+ const escalated=cases.filter(c=>c.status==='escalated');
+ return <>
+  <header className="page-head"><div><span>TIER 3 · HUMAN-ASSISTED RECOVERY</span><h1>Supervisor decision queue</h1><p>Cases with no legal automated option. A supervisor may assign a legal crew, or accept a documented override for the residual risk.</p></div><div className="page-actions"><span className="badge purple">{escalated.length} in queue</span></div></header>
+  {escalated.length===0
+   ?<section className="empty"><ShieldCheck/><h2>Human review queue is clear</h2><p>Cases escalate here from Crew Recovery when automation cannot resolve them. Nothing currently requires supervisor intervention.</p><button className="primary" onClick={()=>go('crew')}>Go to Crew Recovery</button></section>
+   :escalated.map(c=>{
+    const ranked=availableFor(c).filter(cr=>cr.qualifications.includes(c.requiredQual)).map(cr=>({crew:cr,...checkLegality(cr,c)})).sort((a,b)=>Number(b.legal)-Number(a.legal)||(a.crew.base===c.origin?-1:1));
+    return <section className="card" key={c.flight}>
+     <header className="rowbetween"><div><span className="badge purple">TIER 3</span> <strong>{c.flight} · {c.origin} → {c.destination}</strong></div><span className="badge danger">{c.aircraft} · needs {c.requiredQual}</span></header>
+     <p className="muted">{c.incumbentName} ({c.incumbentId}) is illegal on {c.flight}. No standby {c.requiredQual} crew clears every legality check at {c.origin} — supervisor decision required. {c.passengers} passengers exposed.</p>
+     {ranked.length===0&&<p className="muted">No {c.requiredQual}-rated crew in the standby pool — options are a deadhead positioning (not modelled) or cancellation.</p>}
+     <div className="t3-options">{ranked.map(({crew,legal,qualified,positioned,rested,violations},i)=><article className={`t3opt ${legal?'ok':''}`} key={crew.id}><header><span className="badge">RANK {i+1}</span><strong>{crew.name} · {crew.id}</strong>{legal?<span className="badge success">LEGAL</span>:<span className="badge warning">RESIDUAL RISK</span>}</header><p className="muted small">{crew.rank} · base {crew.base} · {crew.qualifications.join('/')} · rest {crew.rest_hours}h · seniority {crew.seniority}</p><div className="verdict"><span className={`chk ${qualified?'ok':'bad'}`}>Qualified</span><span className={`chk ${positioned?'ok':'bad'}`}>At origin</span><span className={`chk ${rested?'ok':'bad'}`}>Rested</span></div>{!legal&&<p className="muted small">Residual risk: {violations.join(' · ')}</p>}<div className="page-actions">{legal?<button className="primary" onClick={()=>reassign(c.flight,crew)}><Check/> Assign {crew.id}</button>:<button className="primary" onClick={()=>overrideAssign(c.flight,crew)}><AlertTriangle/> Accept override</button>}</div></article>)}</div>
+     <div className="page-actions"><button onClick={()=>reopen(c.flight)}>Return to Crew Recovery</button></div>
+    </section>;
+   })}
+ </>;
 }

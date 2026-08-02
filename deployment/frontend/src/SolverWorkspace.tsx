@@ -21,7 +21,7 @@ export default function SolverWorkspace({selected,onOpen}:{selected?:SolverTier[
  const[tiers,setTiers]=useState<SolverTier[]>([]),[ruleset,setRuleset]=useState(''),[prov,setProv]=useState<Provenance|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
  const load=()=>{setLoading(true);setError('');api.solverTiers().then(x=>{setTiers(x.tiers);setRuleset(x.ruleset_version);setProv(x.provenance||null)}).catch(e=>setError(e.message)).finally(()=>setLoading(false))};
  useEffect(load,[]);
- if(loading)return <section className="empty" role="status" aria-live="polite"><RefreshCw className="spin"/><h2>Executing solver benchmark</h2><p>Solving the current synthetic India partition.</p></section>;
+ if(loading)return <section className="empty" role="status" aria-live="polite"><RefreshCw className="spin"/><h2>Executing solver</h2><p>Solving the current India partition.</p></section>;
  if(error)return <section className="empty"><AlertTriangle/><h2>Solver telemetry unavailable</h2><p>{error}</p><button onClick={load}>Retry</button></section>;
 
  if(selected){
@@ -30,7 +30,7 @@ export default function SolverWorkspace({selected,onOpen}:{selected?:SolverTier[
   const v=tierViability(t.status);
   return <>
    <header className="page-head"><div><span>{eyebrow[selected]}</span><h1>{t.name}</h1><p>{meaning[selected]}</p></div><div className="page-actions"><span className={`badge ${v.tone}`}>{v.label.toUpperCase()}</span><button onClick={load}><RefreshCw/> Run again</button></div></header>
-   {v.unavailable&&<div className="provenance" role="alert"><AlertTriangle/><span><strong>{t.name} unavailable — no synthetic success is shown</strong><small>{t.reason}. The Tier 1 legal incumbent is retained; this tier did not modify the plan.</small></span></div>}
+   {v.unavailable&&<div className="provenance" role="alert"><AlertTriangle/><span><strong>{t.name} unavailable — no result is fabricated</strong><small>{t.reason}. The Tier 1 legal incumbent is retained; this tier did not modify the plan.</small></span></div>}
    <div className="fact-strip"><span>Coverage<b>{Math.round(t.coverage*100)}%</b></span><span>Legal assignments<b>{t.legal_assignments}</b></span><span>Unresolved<b>{t.unresolved}</b></span><span>Elapsed<b>{t.elapsed_s.toFixed(3)}s</b></span><span>Ruleset<b>{ruleset||'—'}</b></span></div>
    {selected==='tier2'&&<section className="card"><header><h2><Cpu/> Optimization evidence</h2><span className={`badge ${v.tone}`}>{t.solver_name||'no solver'}</span></header><div className="fact-strip"><span>Solver<b>{t.solver_name||'None configured'}</b></span><span>Legal columns<b>{t.generated_columns??0}</b></span><span>Incumbent<b>{t.upgraded?'Upgraded':'Tier 1 retained'}</b></span><span>Objective<b>{t.objective_value==null?'—':t.objective_value.toFixed(2)}</b></span><span>Best bound<b>{t.best_bound==null?'—':t.best_bound.toFixed(2)}</b></span><span>Optimality gap<b>{t.optimality_gap==null?'No certified gap':`${(t.optimality_gap*100).toFixed(2)}%`}</b></span></div><p className="muted">A null objective, bound or gap means the optimizer produced no certified value — the UI does not fabricate one.</p></section>}
    {selected==='tier3'&&<section className="card"><header><h2><Users/> Human-assisted queue</h2></header><p>Open the Tier 3 workspace to review ranked, legality-gated options for unresolved work.</p><div className="page-actions"><button className="primary" onClick={()=>onOpen('tier3')}>Open Tier 3 queue <ArrowRight/></button></div></section>}

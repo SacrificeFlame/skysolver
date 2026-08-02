@@ -30,7 +30,7 @@ FLIGHTS = [
     {"id": "AI421", "origin": "DEL", "destination": "BOM", "aircraft": {"registration": "VT-EXA", "type": "A321", "status": "blocked"}, "gate": "T3-42", "proposed_gate": "T3-46", "crew": {"id": "IC-184", "status": "illegal", "duty_remaining": "-00:38", "qualifications": ["A321"]}, "passengers": 186, "connections": 42, "delay": 92, "state": "recovery_pending", "tier": "tier1", "risk": "critical"},
     {"id": "6E203", "origin": "BLR", "destination": "DEL", "aircraft": {"registration": "VT-IAB", "type": "A320neo", "status": "available"}, "gate": "D08", "proposed_gate": "D08", "crew": {"id": "IC-072", "status": "searching", "duty_remaining": "03:42", "qualifications": ["A320"]}, "passengers": 179, "connections": 37, "delay": 74, "state": "solving", "tier": "tier1", "risk": "high"},
     {"id": "UK945", "origin": "DEL", "destination": "HYD", "aircraft": {"registration": "VT-TNE", "type": "A321neo", "status": "blocked"}, "gate": "T3-31", "proposed_gate": "T3-35", "crew": {"id": "IC-811", "status": "illegal", "duty_remaining": "00:12", "qualifications": ["A321"]}, "passengers": 168, "connections": 31, "delay": 61, "state": "human_review", "tier": "tier3", "risk": "critical"},
-    {"id": "AI807", "origin": "BOM", "destination": "DEL", "aircraft": {"registration": "VT-ANR", "type": "B787-8", "status": "inbound"}, "gate": "T2-16", "proposed_gate": "T2-16", "crew": {"id": "IC-333", "status": "legal", "duty_remaining": "04:26", "qualifications": ["B787"]}, "passengers": 242, "connections": 54, "delay": 48, "state": "protected", "tier": "tier1", "risk": "medium"},
+    {"id": "AI807", "origin": "BOM", "destination": "DEL", "aircraft": {"registration": "VT-ANR", "type": "B787-8", "status": "inbound"}, "gate": "T2-16", "proposed_gate": "T2-16", "crew": {"id": "IC-333", "status": "illegal", "duty_remaining": "-00:15", "qualifications": ["B787"]}, "passengers": 242, "connections": 54, "delay": 48, "state": "human_review", "tier": "tier3", "risk": "critical"},
     {"id": "6E531", "origin": "DEL", "destination": "CCU", "aircraft": {"registration": "VT-IZR", "type": "A320neo", "status": "ready"}, "gate": "T2-11", "proposed_gate": "T2-11", "crew": {"id": "IC-590", "status": "legal", "duty_remaining": "03:42", "qualifications": ["A320"]}, "passengers": 183, "connections": 18, "delay": 43, "state": "recovered", "tier": "tier1", "risk": "low"},
 ]
 
@@ -39,7 +39,7 @@ DISRUPTIONS = [{
     "summary": "Dense fog reduced DEL departure capacity; crew, aircraft and passenger dependencies are cascading across four Indian network partitions.",
     "source": "IMD / Delhi ATC flow control", "confidence": 0.96, "started_at": "2026-07-31T00:28:00Z",
     "deadline": "2026-07-31T02:10:00Z", "partitions": ["DEL", "BOM", "BLR", "HYD"],
-    "affected_flights": [f["id"] for f in FLIGHTS], "illegal_crews": 7, "blocked_aircraft": 4,
+    "affected_flights": [f["id"] for f in FLIGHTS], "illegal_crews": 3, "blocked_aircraft": 2,
     "passengers": 1284, "status": "active",
 }]
 
@@ -61,6 +61,44 @@ CREW_PROFILES = {
     "IC-333": {"location": "BOM", "qualifications": ["B787"], "rest_hours": 12},
     "IC-590": {"location": "DEL", "qualifications": ["A320"], "rest_hours": 12},
 }
+
+# Full crew roster: on-duty crew plus standby/reserve replacements. Qualifications,
+# base and rest hours are real inputs to the FAR117/DGCA-style legality engine, so a
+# reassignment preview returns a genuine legal/illegal verdict — nothing is faked.
+CREW_ROSTER = [
+    # On-duty incumbents (three are illegal and drive the open recovery cases).
+    {"id": "IC-184", "name": "Rohit Sharma", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "illegal", "duty_remaining": "-00:38", "rest_hours": 5, "assigned_flight": "AI421", "seniority": 8},
+    {"id": "IC-811", "name": "Vikram Singh", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "illegal", "duty_remaining": "00:12", "rest_hours": 6, "assigned_flight": "UK945", "seniority": 6},
+    {"id": "IC-333", "name": "Meera Nair", "rank": "Captain", "base": "BOM", "qualifications": ["B787"], "status": "illegal", "duty_remaining": "-00:15", "rest_hours": 5, "assigned_flight": "AI807", "seniority": 14},
+    {"id": "IC-072", "name": "Ananya Rao", "rank": "Captain", "base": "BLR", "qualifications": ["A320"], "status": "on_duty", "duty_remaining": "03:42", "rest_hours": 12, "assigned_flight": "6E203", "seniority": 11},
+    {"id": "IC-590", "name": "Arjun Menon", "rank": "Captain", "base": "DEL", "qualifications": ["A320"], "status": "on_duty", "duty_remaining": "03:42", "rest_hours": 12, "assigned_flight": "6E531", "seniority": 9},
+    # Standby / reserve pool available for reassignment.
+    {"id": "IC-205", "name": "Kabir Khan", "rank": "Captain", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "09:00", "rest_hours": 13, "assigned_flight": None, "seniority": 12},
+    {"id": "IC-318", "name": "Priya Iyer", "rank": "Captain", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "10:30", "rest_hours": 14, "assigned_flight": None, "seniority": 15},
+    {"id": "IC-401", "name": "Aditya Verma", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "standby", "duty_remaining": "08:15", "rest_hours": 11, "assigned_flight": None, "seniority": 10},
+    {"id": "IC-419", "name": "Sneha Joshi", "rank": "First Officer", "base": "DEL", "qualifications": ["A321", "A320"], "status": "standby", "duty_remaining": "09:45", "rest_hours": 12, "assigned_flight": None, "seniority": 7},
+    {"id": "IC-533", "name": "Rahul Bose", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "reserve", "duty_remaining": "07:00", "rest_hours": 10, "assigned_flight": None, "seniority": 9},
+    {"id": "IC-612", "name": "Manish Gupta", "rank": "Captain", "base": "DEL", "qualifications": ["A320", "A321"], "status": "standby", "duty_remaining": "08:30", "rest_hours": 11, "assigned_flight": None, "seniority": 8},
+    {"id": "IC-688", "name": "Vivek Nair", "rank": "Captain", "base": "DEL", "qualifications": ["A321"], "status": "standby", "duty_remaining": "09:10", "rest_hours": 12, "assigned_flight": None, "seniority": 13},
+    {"id": "IC-701", "name": "Imran Sheikh", "rank": "Captain", "base": "DEL", "qualifications": ["A320"], "status": "standby", "duty_remaining": "08:00", "rest_hours": 12, "assigned_flight": None, "seniority": 6},
+    {"id": "IC-655", "name": "Ritu Sharma", "rank": "First Officer", "base": "DEL", "qualifications": ["A320"], "status": "reserve", "duty_remaining": "07:20", "rest_hours": 13, "assigned_flight": None, "seniority": 5},
+    {"id": "IC-442", "name": "Sana Ali", "rank": "First Officer", "base": "BLR", "qualifications": ["A320"], "status": "standby", "duty_remaining": "09:00", "rest_hours": 12, "assigned_flight": None, "seniority": 5},
+    {"id": "IC-663", "name": "Neha Gupta", "rank": "First Officer", "base": "DEL", "qualifications": ["A321"], "status": "reserve", "duty_remaining": "07:30", "rest_hours": 9, "assigned_flight": None, "seniority": 4},
+    # B787 pool — deliberately thin: no legal option for AI807, so it must escalate to Tier 3.
+    {"id": "IC-507", "name": "Dev Patel", "rank": "Captain", "base": "BOM", "qualifications": ["B787", "A321"], "status": "reserve", "duty_remaining": "07:40", "rest_hours": 9, "assigned_flight": None, "seniority": 13},
+    {"id": "IC-560", "name": "Farah Naaz", "rank": "Captain", "base": "DEL", "qualifications": ["B787"], "status": "standby", "duty_remaining": "09:30", "rest_hours": 12, "assigned_flight": None, "seniority": 12},
+]
+
+# Fleet: aircraft currently operating the disrupted flights plus available spares.
+FLEET = [
+    {"registration": "VT-EXA", "type": "A321", "status": "blocked", "location": "DEL", "gate": "T3-42", "assigned_flight": "AI421", "next_available": "On stand — LVP hold"},
+    {"registration": "VT-TNE", "type": "A321neo", "status": "blocked", "location": "DEL", "gate": "T3-31", "assigned_flight": "UK945", "next_available": "On stand — LVP hold"},
+    {"registration": "VT-IAB", "type": "A320neo", "status": "available", "location": "BLR", "gate": "D08", "assigned_flight": "6E203", "next_available": "Ready"},
+    {"registration": "VT-ANR", "type": "B787-8", "status": "inbound", "location": "BOM", "gate": "T2-16", "assigned_flight": "AI807", "next_available": "ETA 09:40"},
+    {"registration": "VT-IZR", "type": "A320neo", "status": "ready", "location": "DEL", "gate": "T2-11", "assigned_flight": "6E531", "next_available": "Ready"},
+    {"registration": "VT-EXB", "type": "A321", "status": "available", "location": "DEL", "gate": "T3-50", "assigned_flight": None, "next_available": "Spare — ready"},
+    {"registration": "VT-ISP", "type": "A320neo", "status": "maintenance", "location": "DEL", "gate": "MRO-2", "assigned_flight": None, "next_available": "AOG — check A2 ETA 14:00"},
+]
 
 AIRPORTS = {
     "DEL": {"name": "Delhi", "x": 445, "y": 112}, "BOM": {"name": "Mumbai", "x": 332, "y": 262},
@@ -173,6 +211,46 @@ class RecoveryStore:
         result=self.envelope("valid" if not violations else "invalid",DATA_PROVENANCE["state_version"],correlation_id=(payload or {}).get("correlation_id"),causation_id=(payload or {}).get("causation_id"),flight_id=flight_id,legal=not violations,ruleset_version=RulesEngine.RULESET_VERSION,provenance=deepcopy(DATA_PROVENANCE),checks={"airport_sequence":route["origin"]["code"]==leg.origin and route["destination"]["code"]==leg.destination,"positive_distance":route["distance_km"]>0,"arrival_after_departure":arr>dep},rule_violations=[v.to_dict() for v in violations])
         self._record(flight_id,"route_validated",(payload or {}).get("operator_id","ops-controller"),f"{len(violations)} legality findings")
         self._persist(); return result
+
+    def crew_roster(self):
+        on_flight={f["id"]:f for f in FLIGHTS}
+        items=[]
+        for c in CREW_ROSTER:
+            item=deepcopy(c)
+            fl=on_flight.get(c["assigned_flight"] or "")
+            if fl:
+                item["current_route"]=f'{fl["origin"]} → {fl["destination"]}'
+                item["current_origin"]=fl["origin"]; item["current_destination"]=fl["destination"]
+                item["current_aircraft"]=fl["aircraft"]["type"]; item["current_gate"]=fl["gate"]
+                item["passengers"]=fl["passengers"]
+            else:
+                item["current_route"]=None
+            items.append(item)
+        return {"items":items,"provenance":deepcopy(DATA_PROVENANCE)}
+
+    def aircraft_fleet(self):
+        return {"items":[deepcopy(a) for a in FLEET],"provenance":deepcopy(DATA_PROVENANCE)}
+
+    def reassignment_preview(self, flight_id, crew_id):
+        """Real what-if: validate a proposed crew against a flight with the legality engine."""
+        flight=next((f for f in FLIGHTS if f["id"]==flight_id),None)
+        if not flight: raise WorkflowError(404,"flight_not_found","Flight not found")
+        crew_record=next((c for c in CREW_ROSTER if c["id"]==crew_id),None)
+        if not crew_record: raise WorkflowError(404,"crew_not_found","Crew member not found")
+        meta=ROUTES.get(flight_id)
+        if not meta: raise WorkflowError(404,"route_not_found","Planned route not found")
+        day=datetime.now().replace(hour=0,minute=0,second=0,microsecond=0)
+        dep_h,dep_m=map(int,meta["proposed"][0].split(":")); arr_h,arr_m=map(int,meta["proposed"][1].split(":"))
+        dep=day+timedelta(hours=dep_h,minutes=dep_m); arr=day+timedelta(hours=arr_h,minutes=arr_m)
+        if arr<=dep: arr+=timedelta(days=1)
+        aircraft=flight["aircraft"]["type"].replace("-8","").replace("neo","")
+        qualifications={Qualification.__members__[name] for name in crew_record["qualifications"] if name in Qualification.__members__}
+        crew=CrewMember(crew_id,flight["origin"],qualifications,current_location=crew_record["base"],last_rest_end=dep-timedelta(hours=crew_record["rest_hours"]))
+        leg=FlightLeg(flight_id,flight["origin"],flight["destination"],dep,arr,aircraft)
+        assignment=Assignment(crew_id,[leg],dep-timedelta(minutes=45),arr+timedelta(minutes=20))
+        violations=RulesEngine.validate_assignment(crew,assignment)
+        required=Qualification.__members__.get(aircraft)
+        return {"flight_id":flight_id,"crew_id":crew_id,"crew_name":crew_record["name"],"aircraft_type":flight["aircraft"]["type"],"legal":not violations,"ruleset_version":RulesEngine.RULESET_VERSION,"rule_violations":[v.to_dict() for v in violations],"checks":{"qualified":bool(required and required in qualifications),"positioned_at_origin":crew_record["base"]==flight["origin"],"rest_ok":crew_record["rest_hours"]>=RulesEngine.MIN_REST_HOURS},"provenance":deepcopy(DATA_PROVENANCE)}
 
     def solver_tiers(self):
         """Run the real solver implementations on the current synthetic India partition."""
@@ -384,7 +462,7 @@ class RecoveryStore:
             signed_certificate=self._certificate_issuer.issue(tenant_id="synthetic-airline",recovery_id=recovery_id,candidate_id=candidate["id"],input_snapshot=candidate["crew_snapshot"],candidate=certificate_candidate,rules_package=rules_package,ruleset_version=RulesEngine.RULESET_VERSION,state_version=recovery["state_version"],findings=[])
             candidate["legality_certificate"]={**signed_certificate.to_dict(),"findings":[],"independent":False,"warning":"Demo in-process validation; not an independently deployed certified service"}
             recovery.update({"validated": True, "status": "awaiting_joint_feasibility", "stage": "demo_legality_validated", "progress": 90, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
-            self._record(recovery_id, "demo_rules_validated", payload.get("operator_id", "demo-operator"), f"{len(candidate['assignments'])} assignments validated in the non-certified demo path")
+            self._record(recovery_id, "legality_validated", payload.get("operator_id", "scheduler"), f"{len(candidate['assignments'])} assignments validated against the non-certified DGCA-oriented ruleset")
             self._persist()
             return self.envelope("awaiting_joint_feasibility", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 

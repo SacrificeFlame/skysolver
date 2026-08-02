@@ -359,8 +359,18 @@ class RestrictedMasterOptimizer:
                     model.x[index].value = 1
             if self.solver_name in {"highs", "appsi_highs"}:
                 solver.options["time_limit"] = max(0.01, self.time_budget_s - (time.monotonic() - started))
-            result = solver.solve(model, tee=False, load_solutions=True)
+            result = solver.solve(model, tee=False, load_solutions=False)
             termination = str(result.solver.termination_condition).lower()
+            try:
+                model.solutions.load_from(result)
+            except Exception:
+                # Cold-start / no loadable solution within the budget: retain the legal
+                # Tier 1 incumbent cleanly instead of surfacing a raw solver error.
+                uncovered = [flight for flight in flights if flight.flight_id not in incumbent_covered]
+                return OptimizationResult(incumbent, uncovered, OptimizationMetadata(
+                    "timeboxed_feasible", self.solver_name, None, None, None,
+                    time.monotonic()-started, len(columns), base_coverage, base_coverage, False,
+                    "MILP produced no loadable solution within the time budget; Tier 1 legal incumbent retained"))
             selected = [columns[index] for index in range(len(columns)) if value(model.x[index]) >= 0.5]
             assignments = [Assignment(column.crew_id, list(column.legs),
                                       min(leg.scheduled_dep for leg in column.legs),

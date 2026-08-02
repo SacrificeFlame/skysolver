@@ -43,6 +43,11 @@ class RecoveryRequest(BaseModel):
     objective: Literal["balanced", "legality", "passenger", "cost"] = "balanced"
 
 
+class ReassignmentPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    crew_id: str = Field(min_length=1, max_length=64)
+
+
 class DecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     candidate_id: str
@@ -221,6 +226,18 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
     def flight(flight_id: str, _: Principal = Depends(principal)):
         return recovery_store.flight(flight_id)
 
+    @app.get("/api/v1/crew")
+    def crew(_: Principal = Depends(principal)):
+        return recovery_store.crew_roster()
+
+    @app.get("/api/v1/aircraft")
+    def aircraft(_: Principal = Depends(principal)):
+        return recovery_store.aircraft_fleet()
+
+    @app.post("/api/v1/flights/{flight_id}/reassignment-preview")
+    def reassignment_preview(flight_id: str, body: ReassignmentPreviewRequest, _: Principal = Depends(principal)):
+        return recovery_store.reassignment_preview(flight_id, body.crew_id)
+
     @app.get("/api/v1/routes")
     def routes(_: Principal = Depends(principal)):
         return {"items": recovery_store.routes(), "data_mode": "synthetic-demo", "provenance": DATA_PROVENANCE}
@@ -337,6 +354,7 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
         session: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None,
         authorization: Annotated[str | None, Header()] = None,
     ):
+        # Unauthenticated visitors are sent to the sign-in page rather than a raw 401.
         try:
             principal(session, authorization)
         except HTTPException as exc:

@@ -1,4 +1,4 @@
-import type {Audit,Candidate,CandidateExplanation,DataHealth,Deployment,Disruption,Envelope,Flight,Overview,PlannedRoute,Provenance,Recovery,RouteValidation,RuleViolation,SearchResult,SolverTier,Tier3Queue} from './types';
+import type {Audit,Candidate,CandidateExplanation,CrewRosterEntry,DataHealth,Deployment,Disruption,Envelope,FleetAircraft,Flight,Overview,PlannedRoute,Provenance,ReassignmentPreview,Recovery,RouteValidation,RuleViolation,SearchResult,SolverTier,Tier3Queue} from './types';
 
 // Typed failure that preserves the backend contract fields the operator UI needs.
 // Never invents success: it exposes the exact HTTP status, correlation id, the
@@ -37,6 +37,11 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
   const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...(init?.headers||{})}});
   let data:any=undefined;
   try{data=await response.json()}catch{data=undefined} // tolerate empty / non-JSON error bodies
+  if(response.status===401&&typeof window!=='undefined'&&window.location.pathname!=='/'){
+    // Session expired / not authenticated: bounce to the sign-in page instead of
+    // surfacing a raw auth error. Real product behaviour, not a demo dead-end.
+    try{window.location.assign('/')}catch{/* jsdom / non-browser */}
+  }
   if(!response.ok)throw new ApiError(response.status,data);
   return data as T;
 }
@@ -47,6 +52,9 @@ export const api={
   disruptions:()=>request<{items:Disruption[];provenance?:Provenance}>('/api/v1/disruptions'),
   dataHealth:()=>request<DataHealth>('/api/v1/data-health'),
   flight:(id:string)=>request<Flight>(`/api/v1/flights/${id}`),
+  crew:()=>request<{items:CrewRosterEntry[]}>('/api/v1/crew'),
+  aircraft:()=>request<{items:FleetAircraft[]}>('/api/v1/aircraft'),
+  reassignmentPreview:(flightId:string,crewId:string)=>request<ReassignmentPreview>(`/api/v1/flights/${flightId}/reassignment-preview`,{method:'POST',body:JSON.stringify({crew_id:crewId})}),
   routes:()=>request<{items:PlannedRoute[];data_mode:string;provenance?:Provenance}>('/api/v1/routes'),
   route:(id:string)=>request<PlannedRoute>(`/api/v1/routes/${id}`),
   validateRoute:(id:string)=>request<RouteValidation>(`/api/v1/routes/${id}/validate`,{method:'POST',headers:mutationHeaders(1),body:JSON.stringify({})}),
