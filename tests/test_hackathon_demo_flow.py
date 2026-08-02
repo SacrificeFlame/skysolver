@@ -10,7 +10,8 @@ def test_boot_recovery_escalates_one_case_and_tier3_completes_the_plan(tmp_path)
     assert recovery["status"] == "awaiting_intervention"
     assert recovery["tier3"]["status"] == "ready"
     assert recovery["tier3"]["unresolved_flight_ids"] == ["UK945"]
-    assert recovery["tier3"]["suggestions"]
+    assert len(recovery["tier3"]["suggestions"]) == 1
+    assert recovery["tier3"]["suggestions"][0]["crew_id"] == "SIM-003"
 
     suggestion = recovery["tier3"]["suggestions"][0]
     completed = store.decide_tier3_suggestion(
