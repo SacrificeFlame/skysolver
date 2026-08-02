@@ -39,6 +39,7 @@ tr.clickable{cursor:pointer}
 .scenario-strip .dot{width:7px;height:7px;border-radius:50%;background:#27c2d3;flex:0 0 auto;box-shadow:0 0 0 3px rgba(39,194,211,.15)}
 /* Top utility bar */
 .topbar{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 22px;height:42px;border-bottom:1px solid #23323c;background:#0c1922}
+.topbar.status-only{justify-content:flex-end}
 .tb-left{display:flex;align-items:center;gap:9px;min-width:0}
 .tb-left strong{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#cfe0ea}
 .tb-left .muted{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

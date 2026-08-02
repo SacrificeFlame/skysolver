@@ -35,8 +35,7 @@ function TopBar(){
   check();const poll=setInterval(check,60000);
   return()=>{clearInterval(clock);clearInterval(poll)};
  },[]);
- return <div className="topbar">
-  <div className="tb-left"><span className="dot" aria-hidden="true"/><strong>Guided recovery</strong><span className="muted small">Synthetic scenario · DGCA-oriented ruleset · not a live carrier feed</span></div>
+ return <div className="topbar status-only">
   <div className="tb-right">
    <span className={`sys ${healthy===null?'':healthy?'ok':'bad'}`}><i/>{healthy===null?'Checking…':healthy?'System healthy':'Backend unreachable'}</span>
    <span className="clock tabular">{now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Kolkata',hour12:false})} IST</span>
