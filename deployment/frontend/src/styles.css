@@ -323,3 +323,19 @@ tr.clickable:hover td{background:#131f3a}
 /* Primary button text near-black for max legibility on cyan */
 .primary,.primary *{color:#04181e!important}
 .linklike{color:#4bd7ea!important}
+/* ===== SkySolver Kinetic brand mark ===== */
+.logo{display:flex;align-items:center;gap:11px;padding:0 16px}
+.logo>span{display:none}
+.logo svg{flex:0 0 auto;filter:drop-shadow(0 2px 6px rgba(56,207,228,.28))}
+.logo-word{display:flex;flex-direction:column;line-height:1;font-weight:800;font-size:15px;letter-spacing:.14em;color:#eef4fb}
+.logo-word small{margin-top:4px;font-size:8.5px;font-weight:700;letter-spacing:.44em;color:#4bd7ea}
+.brand-lockup{display:flex;flex-direction:column;align-items:center;gap:10px}
+.brand-lockup .wordmark{display:flex;flex-direction:column;align-items:center;gap:5px}
+.brand-lockup .wordmark strong{font-size:26px;font-weight:800;letter-spacing:.16em;color:#eef4fb}
+.brand-lockup .wordmark span{font-size:11px;font-weight:700;letter-spacing:.5em;color:#4bd7ea;padding-left:.5em}
+.brand-lockup.compact{flex-direction:row;gap:12px}
+.brand-lockup.compact .wordmark{align-items:flex-start;gap:3px}
+.brand-lockup.compact .wordmark strong{font-size:18px}
+.brand-lockup.compact .wordmark span{font-size:8px}
+
+.logo svg{width:34px;height:auto}
