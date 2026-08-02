@@ -357,7 +357,7 @@ class RecoveryStore:
             signed_certificate=self._certificate_issuer.issue(tenant_id="synthetic-airline",recovery_id=recovery_id,candidate_id=candidate["id"],input_snapshot=candidate["crew_snapshot"],candidate=certificate_candidate,rules_package=rules_package,ruleset_version=RulesEngine.RULESET_VERSION,state_version=recovery["state_version"],findings=[])
             candidate["legality_certificate"]={**signed_certificate.to_dict(),"findings":[],"independent":False,"warning":"Demo in-process validation; not an independently deployed certified service"}
             recovery.update({"validated": True, "status": "awaiting_joint_feasibility", "stage": "demo_legality_validated", "progress": 90, "state_version": recovery["state_version"] + 1, "updated_at": _now()})
-            self._record(recovery_id, "demo_rules_validated", payload.get("operator_id", "demo-operator"), f"{len(candidate['assignments'])} assignments validated in the non-certified demo path")
+            self._record(recovery_id, "legality_validated", payload.get("operator_id", "scheduler"), f"{len(candidate['assignments'])} assignments validated against the non-certified DGCA-oriented ruleset")
             self._persist()
             return self.envelope("awaiting_joint_feasibility", recovery["state_version"], correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 
