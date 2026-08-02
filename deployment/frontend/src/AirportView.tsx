@@ -24,16 +24,16 @@ const TONE:Record<GroundState['tone'],string>={danger:'#ef6a6a',warning:'#e7c15a
 
 function PlaneGlyph({x,y,angle,color,onClick}:{x:number;y:number;angle:number;color:string;onClick?:()=>void}){
  return <g transform={`translate(${x} ${y}) rotate(${angle})`} onClick={onClick} style={onClick?{cursor:'pointer'}:undefined}>
-  <path d="M0 -9 L2.4 -2.6 L10 1.4 L10 4 L2.2 2 L1.6 7 L4.4 9.4 L4.4 11 L0 10 L-4.4 11 L-4.4 9.4 L-1.6 7 L-2.2 2 L-10 4 L-10 1.4 L-2.4 -2.6 Z" fill={color} stroke="#08131c" strokeWidth=".8"/>
+  <path d="M0 -9 L2.4 -2.6 L10 1.4 L10 4 L2.2 2 L1.6 7 L4.4 9.4 L4.4 11 L0 10 L-4.4 11 L-4.4 9.4 L-1.6 7 L-2.2 2 L-10 4 L-10 1.4 L-2.4 -2.6 Z" fill={color} stroke="#0a1122" strokeWidth=".8"/>
  </g>;
 }
 
 function StatusPill({x,y,state,name}:{x:number;y:number;state:GroundState;name:string}){
  const w=12+Math.max(name.length,state.label.length)*6.4;
  return <g transform={`translate(${x} ${y})`}>
-  <rect x="0" y="-11" width={w} height="15" rx="3" fill="#0b1720" stroke="#2a3b46"/>
+  <rect x="0" y="-11" width={w} height="15" rx="3" fill="#0f1a30" stroke="#2a3a5e"/>
   <text x="6" y="0" fontSize="9" fontWeight="700" fill="#dfe8ed" style={{letterSpacing:'.04em'}}>{name}</text>
-  <rect x="0" y="6" width={w} height="14" rx="3" fill="#0b1720" stroke={TONE[state.tone]} opacity=".95"/>
+  <rect x="0" y="6" width={w} height="14" rx="3" fill="#0f1a30" stroke={TONE[state.tone]} opacity=".95"/>
   <text x="6" y="16" fontSize="8" fontWeight="700" fill={TONE[state.tone]} style={{letterSpacing:'.06em'}}>{state.label}</text>
  </g>;
 }
@@ -46,7 +46,7 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
  return <div className="airport-wrap">
   <svg viewBox="0 0 960 520" role="img" aria-label="Delhi airport operational view: gates, taxiways, runway 28 and inbound traffic" preserveAspectRatio="xMidYMid meet">
    <defs>
-    <linearGradient id="apron" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#0b1926"/><stop offset="1" stopColor="#08131c"/></linearGradient>
+    <linearGradient id="apron" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#0e1830"/><stop offset="1" stopColor="#0a1122"/></linearGradient>
     <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#9fb2bd" stopOpacity=".08"/><stop offset="1" stopColor="#9fb2bd" stopOpacity="0"/></linearGradient>
    </defs>
    <rect width="960" height="520" rx="10" fill="url(#apron)"/>
@@ -54,20 +54,20 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
 
    {/* Runway 28 — diagonal */}
    <g transform="rotate(-16 480 330)">
-    <rect x="70" y="308" width="820" height="46" rx="4" fill="#16242f" stroke="#2a3b46"/>
+    <rect x="70" y="308" width="820" height="46" rx="4" fill="#1a2440" stroke="#2a3a5e"/>
     <line x1="100" y1="331" x2="860" y2="331" stroke="#8598a3" strokeWidth="2.5" strokeDasharray="26 20"/>
     {[92,100,108].map(x=><rect key={x} x={x} y="313" width="4" height="36" fill="#8598a3" opacity=".8"/>)}
     {[852,860,868].map(x=><rect key={x} x={x} y="313" width="4" height="36" fill="#8598a3" opacity=".8"/>)}
     <text x="132" y="337" fontSize="17" fontWeight="800" fill="#c3d2db">28</text>
     <text x="806" y="337" fontSize="17" fontWeight="800" fill="#c3d2db">10</text>
     {/* Parallel taxiway */}
-    <rect x="110" y="252" width="740" height="17" rx="3" fill="#132430" stroke="#243642"/>
+    <rect x="110" y="252" width="740" height="17" rx="3" fill="#131d38" stroke="#243352"/>
     <line x1="120" y1="260" x2="840" y2="260" stroke="#b9a23c" strokeWidth="1.4" strokeDasharray="10 8" opacity=".7"/>
     {/* High-speed exit */}
-    <path d="M600 269 L556 308" stroke="#243642" strokeWidth="15" fill="none"/>
+    <path d="M600 269 L556 308" stroke="#243352" strokeWidth="15" fill="none"/>
     <path d="M600 261 L552 305" stroke="#b9a23c" strokeWidth="1.2" strokeDasharray="7 6" opacity=".7" fill="none"/>
     {/* Runway entry */}
-    <path d="M250 269 L250 308" stroke="#243642" strokeWidth="15" fill="none"/>
+    <path d="M250 269 L250 308" stroke="#243352" strokeWidth="15" fill="none"/>
    </g>
    <text x="676" y="346" fontSize="9" fontWeight="700" fill="#7f909b" style={{letterSpacing:'.09em'}}>HIGH-SPEED EXIT E7</text>
    <text x="700" y="470" fontSize="10" fontWeight="700" fill="#7f909b" style={{letterSpacing:'.08em'}}>RWY 28 · CAT III</text>
@@ -75,15 +75,15 @@ export default function AirportView({flights,cases,onSelect}:{flights:Flight[];c
    {/* Hold short bar */}
    <g transform="translate(320 316)">
     <rect x="-2" y="-3" width="34" height="7" fill="#e7c15a" opacity=".85"/>
-    <rect x="-2" y="-3" width="34" height="7" fill="none" stroke="#08131c" strokeDasharray="4 4"/>
+    <rect x="-2" y="-3" width="34" height="7" fill="none" stroke="#0a1122" strokeDasharray="4 4"/>
     <text x="-4" y="20" fontSize="9" fontWeight="700" fill="#e7c15a" style={{letterSpacing:'.08em'}}>HOLD SHORT 28</text>
    </g>
 
    {/* Gate stands + taxi lines from stands toward the taxiway */}
    {departures.map(([id,y])=>{const f=byId(id);if(!f)return null;const st=flightGroundState(f,caseOf(id));const active=st.tone!=='danger';
     return <g key={id}>
-     <path d={`M148 ${y+14} C 240 ${y+14} 250 ${y+40} 296 ${Math.min(y+92,332)}`} fill="none" stroke={active?'#27637a':'#22313c'} strokeWidth="2" strokeDasharray="7 7" opacity=".8"/>
-     <rect x="66" y={y-6} width="76" height="40" rx="6" fill="#0d1a23" stroke="#2a3b46"/>
+     <path d={`M148 ${y+14} C 240 ${y+14} 250 ${y+40} 296 ${Math.min(y+92,332)}`} fill="none" stroke={active?'#27637a':'#22304e'} strokeWidth="2" strokeDasharray="7 7" opacity=".8"/>
+     <rect x="66" y={y-6} width="76" height="40" rx="6" fill="#141f36" stroke="#2a3a5e"/>
      <text x="80" y={y+13} fontSize="11" fontWeight="800" fill="#c3d2db">{f.gate}</text>
      <text x="80" y={y+26} fontSize="8" fill="#7f909b">{f.aircraft.registration}</text>
      <PlaneGlyph x={172} y={y+13} angle={62} color={TONE[st.tone]} onClick={onSelect?()=>onSelect(f):undefined}/>

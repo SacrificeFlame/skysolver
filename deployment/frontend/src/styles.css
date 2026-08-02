@@ -191,80 +191,118 @@ button.wide{display:inline-flex;align-items:center;gap:6px}
 .step-flow .step .s-state{display:flex;align-items:center;gap:6px}
 .step-flow .step svg{width:14px;height:14px}
 @media (prefers-reduced-motion: reduce){.spin{animation:none!important}*{transition:none!important;animation-duration:.001ms!important;animation-iteration-count:1!important}}
-
-/* ================= Design refinement layer =================
-   Typographic discipline, hairline elevation instead of heavy boxes,
-   ghost status chips, mono for operational data, grouped navigation. */
-:root{--mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,"Roboto Mono",monospace;--hair:#182833;--panel:#0d1922;--raise:#11202b;--ink:#e7edf2;--ink2:#93a6b1;--ink3:#5c7482;--accent:#2cc4d7}
-body{background:#0a141d}
-.app-shell,.sidebar{background:#0a141d}
-/* Navigation: grouped, quieter, inset accent for active */
-.sidebar{border-right:1px solid var(--hair)}
-.sidebar nav{display:flex;flex-direction:column;gap:2px;padding:10px 10px 16px}
-.nav-group{display:grid;gap:1px}
-.nav-label{padding:14px 11px 5px;font-size:8.5px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:#46606f}
+/* ================= Product skin: deep-navy flight-deck =================
+   Modeled on the guided-recovery concept art: navy surfaces, roomy radii,
+   soft depth, filled status pills, large colored numerals, glowing CTA. */
+:root{--bg:#0a1122;--panel:#101a2e;--panel2:#15203a;--hair:#1e2b47;--ink:#eef2f8;--ink2:#9aa8c0;--ink3:#5d6d8a;--accent:#38cfe4;--red:#ef5561;--amber:#f0b24a;--green:#3ecf8e;--purple:#a78bfa;--mono:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;--shadow:0 10px 28px rgba(2,6,18,.45)}
+:root,body{background:var(--bg);color:var(--ink)}
+.app-shell{background:var(--bg)}
+/* Sidebar */
+.sidebar{background:#0b1226;border-right:1px solid var(--hair)}
+.logo{border-bottom:1px solid var(--hair);letter-spacing:1.6px}
+.logo>span{background:var(--accent);color:#03222b;border-radius:8px}
+.logo small{color:#5d6d8a}
+.sidebar nav{display:flex;flex-direction:column;gap:2px;padding:12px 12px 16px}
+.nav-group{display:grid;gap:2px}
+.nav-label{padding:15px 12px 6px;font-size:8.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#48587a}
 .nav-group:first-child .nav-label{padding-top:6px}
-.sidebar nav button{height:34px;border-radius:4px;font-size:11.5px;color:#8a9ca7}
-.sidebar nav button:hover{background:#0f1e28;color:#d6e1e8}
-.sidebar nav button.active{background:#0f222d;color:#fff;box-shadow:inset 2px 0 var(--accent)}
-.sidebar nav button.sub{margin-left:10px;height:30px;font-size:10.5px;border-left:1px solid #1b303c}
-.logo{border-bottom:1px solid var(--hair)}
-.side-foot{border-top:1px solid var(--hair)}
-/* Page head: hairline underscore, tracked eyebrow, larger display title */
-.page-head{border-bottom:1px solid var(--hair);padding-bottom:14px;margin-bottom:16px}
-.page-head>div>span{font-size:9.5px;font-weight:800;letter-spacing:.18em;color:var(--ink3)}
-.page-head h1{font-size:25px;font-weight:650;letter-spacing:-.02em}
-.page-head p{font-size:11.5px;color:var(--ink2)}
-/* Panels: hairline + elevation, section titles as tracked labels */
-.card{border-color:var(--hair);background:var(--panel);border-radius:6px}
-.card>h2,.card>header h2{font-size:10.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8fa2ad}
-.kpis{border-color:var(--hair);background:var(--panel);border-radius:6px}
+.sidebar nav button{height:35px;border-radius:8px;font-size:11.5px;color:#8b9bb4;padding:0 12px}
+.sidebar nav button:hover{background:#111c33;color:#dbe4f0}
+.sidebar nav button.active{background:#152643;color:#fff;box-shadow:none}
+.sidebar nav button.active svg{color:var(--accent)}
+.sidebar nav button.sub{margin-left:12px;height:31px;font-size:10.5px;border-left:1px solid #233252;border-radius:0 8px 8px 0}
+.side-foot{border-top:1px solid var(--hair);color:#7688a6}
+/* Top bar */
+.topbar{background:#0c1428;border-bottom:1px solid var(--hair);height:46px}
+.tb-left strong{color:#dfe8f5}
+.tb-left .dot{background:var(--accent);box-shadow:0 0 0 3px rgba(56,207,228,.15)}
+.clock{font-family:var(--mono);color:#cfdaeb}
+.avatar{background:#152643;border-color:#2b3f66;color:#8fdcec}
+.sys.ok{color:#6fe2ae}.sys.ok i{background:var(--green);box-shadow:0 0 8px rgba(62,207,142,.6)}
+/* Page head */
+.page-head{border-bottom:1px solid var(--hair);padding-bottom:15px;margin-bottom:18px}
+.page-head>div>span{font-size:9.5px;font-weight:800;letter-spacing:.2em;color:var(--ink3)}
+.page-head h1{font-size:27px;font-weight:700;letter-spacing:-.02em;color:#f2f6fb}
+.page-head p{font-size:12px;color:var(--ink2)}
+/* Panels */
+.card,.kpis,.fact-strip,.empty,.table-wrap,.airport-wrap,.tier-card,.candidate{border:1px solid var(--hair);background:var(--panel);border-radius:12px}
+.card{padding:18px;box-shadow:var(--shadow)}
+.card>h2,.card>header h2{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#aab8d2}
+.kpis{overflow:hidden}
 .kpi{border-right:1px solid var(--hair)}
-.kpi span{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
-.kpi strong{font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-.kpi small{color:#4c6472}
-.fact-strip{border:1px solid var(--hair);background:var(--panel);border-radius:6px}
-/* Status chips: ghost treatment — tinted outline, not filled blocks */
-.badge{border-radius:2px;padding:2.5px 6px;font-size:8.5px;letter-spacing:.09em;background:transparent;border-color:#31434e;color:#8fa2ad}
-.badge.danger{background:rgba(224,85,99,.09);border-color:#653640;color:#ee8d97}
-.badge.warning{background:rgba(217,169,68,.08);border-color:#635325;color:#e0b95c}
-.badge.success{background:rgba(70,181,120,.08);border-color:#2c5c40;color:#6cc794}
-.badge.cyan{background:rgba(44,196,215,.08);border-color:#215b66;color:#63cddd}
-.badge.purple{background:rgba(157,127,214,.09);border-color:#4c3a6b;color:#b49ae0}
-/* Buttons: calm neutrals, one accent for primary actions only */
-.page-actions button,.card button,.empty button,.t3opt button,.candidate button{border-radius:4px;border-color:#26414e00}
-button{border-color:#243642}
-button:hover{border-color:#31505f}
-.primary{background:#17aec2;border-color:#17aec2;color:#04161b}
-.primary:hover{background:#25c0d4;border-color:#25c0d4}
-button:disabled{opacity:.45;cursor:not-allowed}
-/* Tables: terminal density, small-cap headers, hairline rows, mono numerals */
-table{font-size:10px}
-th{font-size:8.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#54707e;border-bottom:1px solid #1e3038;padding:8px 11px}
-td{padding:8px 11px;border-bottom:1px solid #121f29;font-variant-numeric:tabular-nums}
+.kpi span{font-size:9px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.kpi strong{font-size:25px;font-family:var(--mono);letter-spacing:-.02em}
+.kpi small{color:#54648a}
+/* Status pills — filled, like the concept art */
+.badge{border:0;border-radius:999px;padding:3.5px 9px;font-size:8.5px;font-weight:800;letter-spacing:.1em;background:#20304f;color:#aab8d4}
+.badge.danger{background:var(--red);color:#fff}
+.badge.warning{background:var(--amber);color:#241a05}
+.badge.success{background:#1e7d55;color:#d9ffe9}
+.badge.cyan{background:#155263;color:#8fe6f4}
+.badge.purple{background:#5b4a91;color:#e9defc}
+/* Buttons */
+button{border:1px solid #24345a;border-radius:8px;background:#152242;color:#dbe4f0;padding:9px 14px;font-size:11px;transition:background .15s,border-color .15s,box-shadow .15s,transform .1s}
+button:hover{background:#1a2b52;border-color:#31456f}
+button:active{transform:translateY(1px)}
+button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.primary{background:var(--accent);border-color:var(--accent);color:#03222b;font-weight:800;box-shadow:0 4px 18px rgba(56,207,228,.28)}
+.primary:hover{background:#5adcee;border-color:#5adcee}
+.cta{height:46px;border-radius:10px;font-size:13.5px}
+.linklike{background:none;border:0;box-shadow:none;padding:0;color:var(--accent)}
+.linklike:hover{background:none;text-decoration:underline}
+/* Sidebar/nav buttons keep their own look */
+.sidebar nav button{border:0;background:transparent;box-shadow:none}
+.sidebar nav button:active{transform:none}
+/* Tables */
+table{font-size:11px}
+th{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#5d6d8a;border-bottom:1px solid var(--hair);padding:10px 12px}
+td{padding:9px 12px;border-bottom:1px solid #16223c;font-variant-numeric:tabular-nums;color:#ccd7e8}
 tbody tr:last-child td{border-bottom:0}
-.table-wrap{border:1px solid var(--hair);border-radius:6px;overflow:auto}
-/* Mono where operators read codes, times and quantities */
-.clock,.delay-chip,.fact-strip b,.pairing-dl dd,.score,.audit td,.ev small,.prio-kpis strong{font-family:var(--mono)}
-/* Empty states: editorial, left-aligned — not centered icon soup */
-.empty{min-height:220px;display:grid;place-items:start;align-content:start;gap:2px;text-align:left;padding:26px 28px;border:1px solid var(--hair);border-radius:6px;background:#0c1720;color:#7d919c}
-.empty svg{width:18px;height:18px;color:#39525f;margin-bottom:8px}
-.empty h2{margin:0 0 3px;font-size:15px;font-weight:650;color:#c9d6dd}
-.empty p{margin:0 0 12px;max-width:520px;font-size:11.5px;line-height:1.55}
-/* Cases / options: hairline containment */
-.caserow,.crewopt,.t3opt,.mini-case,.fl-row,.ack,.step,.gate,.plan-line,.fleet-card{border-color:var(--hair)}
-.caserow.active,.fl-row:hover,.crewopt.ok:hover{border-color:#2b4656}
-.tier-card,.candidate{border:1px solid var(--hair);background:var(--panel)}
-/* Toast: quieter confirmation */
-.toast{font-size:11px;border-radius:5px;padding:12px 15px;background:#0f2019;border-color:#24513a;color:#8fd8a8;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+tr.clickable:hover td{background:#131f3a}
+.table-wrap{overflow:auto;box-shadow:var(--shadow)}
+/* Mono for operational data */
+.clock,.delay-chip,.fact-strip b,.pairing-dl dd,.score,.ev small,.prio-kpis strong{font-family:var(--mono)}
+/* Empty states */
+.empty{min-height:230px;display:grid;place-items:start;align-content:start;gap:2px;text-align:left;padding:28px 30px;color:#8b9bb4}
+.empty svg{width:19px;height:19px;color:#3c4f76;margin-bottom:8px}
+.empty h2{margin:0 0 4px;font-size:16px;font-weight:650;color:#dbe4f0}
+.empty p{margin:0 0 14px;max-width:540px;font-size:12px;line-height:1.55}
+/* Component surfaces onto navy */
+.caserow,.crewopt,.t3opt,.mini-case,.fl-row,.ack,.step,.gate,.plan-line,.fleet-card,.field input{background:var(--panel2);border-color:var(--hair);border-radius:9px}
+.caserow:hover,.fl-row:hover{background:#182648;border-color:#2c3f68}
+.caserow.active{border-color:#2f9eb5;box-shadow:inset 0 0 0 1px #2f9eb5}
+.crewopt.ok{border-color:#23684b}.crewopt.bad{border-color:#5c3140}
+.t3opt.ok{border-color:#23684b}
+.step.done{border-color:#23684b}.step.blocked{border-color:#5c3140}.step.current{border-color:#2f9eb5;box-shadow:inset 0 0 0 1px #2f9eb5}
+.ack.ok{border-color:#23684b}.ack.bad{border-color:#5c3140}.ack.wait{border-color:#63552a}.ack.part{border-color:#6b4f2a}
+.gate.ok{border-color:#23684b}.gate.blocked{border-color:#63552a}
+.plan-line{border-color:#23684b;background:#0f2038}
+.banner-ok{border-color:#23684b;background:#0f251d;border-radius:10px}
+.chk{border-radius:999px}
+.chk.ok{color:#6fe2ae;border-color:#23684b}.chk.bad{color:#f18a94;border-color:#5c3140}
+/* Priority banner */
+.prio-banner{border:1px solid #33253a;border-left:3px solid var(--red);border-radius:12px;background:linear-gradient(90deg,#1a1226,#101a2e 58%);box-shadow:var(--shadow)}
+.prio-left h1{font-size:22px;font-weight:700;color:#f2f6fb}
+.prio-kpis>div{border-left:1px solid var(--hair)}
+.prio-kpis strong{font-size:30px;font-weight:800}
+.prio-kpis strong.bad{color:var(--red)}.prio-kpis strong.warn{color:var(--amber)}.prio-kpis strong.good{color:var(--green)}
+/* Guided layout */
+.gcol{box-shadow:var(--shadow)}
+.delay-chip{color:var(--amber)}
+.airport-wrap{background:#0a1122;border-radius:12px}
+.ev::before{background:#1c2a44}
+.ev.done .ev-dot{background:var(--green)}
+.ev.current .ev-dot{background:var(--accent);box-shadow:0 0 0 4px rgba(56,207,228,.18)}
+.reco-progress{background:#152242}
+.reco-progress>div,.progressbar-fill{background:linear-gradient(90deg,#1c7d5a,#3ecf8e)}
+.progressbar{background:var(--panel2);border-color:var(--hair);border-radius:9px}
+.scenario-strip{background:#0c1428;border-color:var(--hair)}
+/* Data health gates */
+.gate b{color:#dbe4f0}
+/* Toast */
+.toast{font-size:11.5px;border-radius:10px;padding:13px 16px;background:#0f2338;border:1px solid #1f5c46;color:#8fe0b4;box-shadow:0 12px 32px rgba(2,6,18,.55)}
 /* Scrollbars */
 *::-webkit-scrollbar{width:10px;height:10px}
-*::-webkit-scrollbar-thumb{background:#1b2c37;border-radius:5px;border:2px solid #0a141d}
-*::-webkit-scrollbar-thumb:hover{background:#26404e}
+*::-webkit-scrollbar-thumb{background:#1c2a48;border-radius:5px;border:2px solid var(--bg)}
+*::-webkit-scrollbar-thumb:hover{background:#28406b}
 *::-webkit-scrollbar-track{background:transparent}
-/* Top bar + banner coherence */
-.topbar{background:#0b1620;border-color:var(--hair)}
-.prio-banner{border-color:#2c2229;border-left-color:#b64a55;background:linear-gradient(90deg,#171017,#0d1922 55%)}
-.prio-kpis>div{border-color:var(--hair)}
-.scenario-strip{border-color:var(--hair)}
-.progressbar,.reco-progress,.airport-wrap{border-color:var(--hair)}
