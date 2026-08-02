@@ -30,7 +30,7 @@ describe('Solver tier workspace truthful states',()=>{
  it('renders a Tier 2 solver_unavailable banner without inventing success',async()=>{
   vi.stubGlobal('fetch',vi.fn(()=>ok({generated_at:'',partition_id:'X',ruleset_version:'r',data_mode:'d',tiers:[{id:'tier2',name:'Optimization Upgrade',status:'solver_unavailable',coverage:1,legal_assignments:5,unresolved:0,elapsed_s:0.001,reason:"No module named 'pyomo'",solver_name:'highs',generated_columns:7,upgraded:false,objective_value:null,best_bound:null,optimality_gap:null}]})));
   render(<SolverWorkspace selected="tier2" onOpen={()=>{}}/>);
-  await screen.findByText(/no synthetic success is shown/i);
+  await screen.findByText(/no result is fabricated/i);
   expect(screen.getByText(/No certified gap/i)).toBeTruthy();
  });
  it('shows an error state when telemetry is unauthorized',async()=>{

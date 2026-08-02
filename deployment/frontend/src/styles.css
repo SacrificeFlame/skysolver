@@ -34,6 +34,9 @@ tr.clickable{cursor:pointer}
 .step.done{border-color:#2f6d4a}.step.done .s-state{color:#57d08a}
 .step.blocked{border-color:#7c3535}.step.blocked .s-state{color:#ef6a6a}
 .step.current{border-color:#27637a;box-shadow:inset 0 0 0 1px #27637a}
+.scenario-strip{display:flex;align-items:center;gap:9px;padding:7px 22px;border-bottom:1px solid #23323c;background:#0c1922;color:#9fb2bd;font-size:11px}
+.scenario-strip strong{color:#cfe0ea;font-weight:600;letter-spacing:.02em}
+.scenario-strip .dot{width:7px;height:7px;border-radius:50%;background:#27c2d3;flex:0 0 auto;box-shadow:0 0 0 3px rgba(39,194,211,.15)}
 .field{display:grid;gap:5px;margin:10px 0}
 .field span{font-size:11px;color:#8598a3}
 .field input{height:38px;padding:0 12px;border:1px solid #2a3b46;border-radius:6px;background:#0b1720;color:#e7edf2}
