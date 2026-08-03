@@ -83,7 +83,7 @@ jobs:
       - name: Kubernetes and carrier-write policy tests
         run: python -m pytest tests/test_deployment_policy.py -q
       - name: Scan infrastructure configuration
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
@@ -104,6 +104,8 @@ jobs:
         run: bandit -r core deployment integrations passengers predictive rules solvers state -x "*/tests/*" -ll
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: ${{ github.workspace }}/.gitleaks.toml
 
   container:
     runs-on: ubuntu-latest
@@ -121,7 +123,7 @@ jobs:
           load: true
           tags: skysolver/worker:${{ github.sha }}
       - name: Scan candidate image
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: skysolver/worker:${{ github.sha }}
           severity: HIGH,CRITICAL

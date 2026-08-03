@@ -1,0 +1,40 @@
+title = "SkySolver secret scanning"
+
+# Start from the full upstream ruleset. This file narrows it in two specific
+# places and nowhere else — it must never be used to silence a real finding.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixture identifiers and vendored dependencies"
+
+# The generic-api-key heuristic matches a few literals in the unit tests that
+# are key-shaped but are not credentials. They are allowlisted by exact value
+# rather than by file path, so those test files stay fully scanned: a real
+# secret added to them later would still be caught.
+#
+#   correlation_id=  matched as a bare fragment of a keyword argument
+#   correlation-1    correlation id fixture
+#   idem-12345678    idempotency key fixture
+#   publish-cmd-1    idempotency key fixture
+#   kms-key-1        a KMS key *identifier*, not the key material
+#
+# An identifier that names a key is not the key. None of these grants access to
+# anything, and none exists outside the test suite.
+regexes = [
+  '''correlation_id=''',
+  '''correlation-1''',
+  '''idem-12345678''',
+  '''publish-cmd-1''',
+  '''kms-key-1''',
+]
+
+# Third-party code we vendor but do not author. Excluded so their test vectors
+# do not drown out findings in our own source. Not checked out in CI, but keeps
+# local `gitleaks detect` runs usable.
+paths = [
+  '''^\.venv/''',
+  '''^node_modules/''',
+  '''^deployment/frontend/node_modules/''',
+  '''^\.gitleaks\.toml$''',
+]
