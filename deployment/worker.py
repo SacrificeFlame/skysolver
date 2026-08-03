@@ -43,7 +43,7 @@ class _HealthHandler(BaseHTTPRequestHandler):
 
 
 def start_health_server(port: int = 8080):
-    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), _HealthHandler)  # nosec B104 - liveness probes reach this from outside the pod network namespace
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server
 

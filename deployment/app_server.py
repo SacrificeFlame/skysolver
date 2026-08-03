@@ -8,7 +8,7 @@ import uvicorn
 def run_app(port=None):
     uvicorn.run(
         "deployment.production_api:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104 - binds all interfaces by design: the container runtime, not the process, controls exposure
         port=int(port or os.environ.get("PORT", "8000")),
         proxy_headers=True,
         forwarded_allow_ips=os.environ.get("SKYSOLVER_FORWARDED_ALLOW_IPS", "127.0.0.1"),

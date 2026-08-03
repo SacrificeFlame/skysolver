@@ -74,7 +74,7 @@ class OperationalReadRepository:
             if recovery_id:clauses.extend(["aggregate_type='recovery'","aggregate_id=%s"]);parameters.append(recovery_id)
             if after_recorded is not None:clauses.append("recorded_at>%s");parameters.append(after_recorded)
             parameters.append(limit)
-            cursor.execute("SELECT event_id,aggregate_type,aggregate_id,aggregate_version,event_type,recorded_at,correlation_id,causation_id,actor_subject,payload,payload_sha256 FROM operational_event WHERE "+" AND ".join(clauses)+" ORDER BY recorded_at,event_id LIMIT %s",tuple(parameters))
+            cursor.execute("SELECT event_id,aggregate_type,aggregate_id,aggregate_version,event_type,recorded_at,correlation_id,causation_id,actor_subject,payload,payload_sha256 FROM operational_event WHERE "+" AND ".join(clauses)+" ORDER BY recorded_at,event_id LIMIT %s",tuple(parameters))  # nosec B608 - every clause fragment is a literal; all values are bound through the parameter tuple
             return [{"event_id":str(r[0]),"aggregate_type":r[1],"aggregate_id":r[2],"aggregate_version":int(r[3]),
                 "event_type":r[4],"recorded_at":r[5],"correlation_id":str(r[6]),"causation_id":str(r[7]) if r[7] else None,
                 "actor_subject":r[8],"payload":_json(r[9]),"payload_sha256":r[10]} for r in cursor.fetchall()]
