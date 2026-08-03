@@ -1,0 +1,42 @@
+# Build context exclusions.
+#
+# The Dockerfile does `COPY . .`, so without this file a local build bakes the
+# working directory into the image — including .env. CI builds from a clean
+# checkout and never had that exposure; a developer building locally did.
+
+# Secrets. Never in an image.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node: the frontend bundle is committed under dist/ and needs no build here
+node_modules/
+deployment/frontend/node_modules/
+
+# Terraform state and provider cache
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# VCS, CI and docs — not needed at runtime
+.git/
+.github/
+.gitignore
+.dockerignore
+docs/
+*.md
+
+# Stray local output
+*.out
+*.log

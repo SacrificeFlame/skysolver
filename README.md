@@ -8,6 +8,7 @@ The repository is **not production-ready airline software**. It does not process
 
 - Hub-based synthetic crew and flight partitioning.
 - A dedicated, independently tested crew-legality module.
+- An agentic recovery loop where an LLM chooses what to try and the rules engine decides what is allowed, with the legality guard enforced in code.
 - A bounded Tier 1 greedy heuristic with legal partial results.
 - A restricted-master MILP Tier 2 upgrade path with a Tier 1 warm start and truthful solver telemetry.
 - An authenticated, versioned Tier 3 scheduler workflow with no automatic approval.
@@ -19,6 +20,47 @@ The repository is **not production-ready airline software**. It does not process
 - Terraform for EKS, Aurora, MSK, Redis, S3, KMS, Cognito federation, ALB/WAF/Route 53, backups and managed Prometheus.
 
 See [docs/implementation-status.md](docs/implementation-status.md) for the verified maturity of each area and the current production gaps.
+
+## Recovery agent
+
+An LLM plans the recovery; a deterministic rules engine decides what is permitted. The split is the point, and it is enforced in code rather than in a prompt.
+
+The agent runs a perceive → plan → act → observe → re-plan → escalate loop over six tools. For each flight whose crew has fallen out of legal limits, it shortlists type-rated replacements, asks the FAR117/DGCA-style engine to rule on each candidate, and reads the actual violation codes back. `agents/tools.py` enforces two invariants that no planner can talk its way around:
+
+- `commit_reassignment` is refused unless that exact flight and crew already returned `legal: true` from the rules engine **in the same run**.
+- `escalate_to_tier3` is refused until every type-rated candidate has genuinely been evaluated and rejected.
+
+Because those guards live in Python, a hallucinating or adversarial model cannot publish an illegal roster. The test suite includes a `RoguePlanner` that tries exactly that and is refused.
+
+The agent proposes; it does not deploy. A committed reassignment enters the run's plan and the audit trail, and publishing still passes through the existing scheduler → duty-manager → deployment-controller gates.
+
+```bash
+python -m agents                    # deterministic planner, no API key required
+python -m agents --planner gemini   # LLM planner (needs GEMINI_API_KEY)
+python -m agents --json             # full decision trace as JSON
+```
+
+Two planners implement one interface. `DeterministicPlanner` is a scarcity-aware constraint heuristic: it works the most constrained flight first and avoids spending a rare type rating on a flight that many crew could cover. The LLM planner drives the identical tool surface and contributes judgement about what is worth trying — never about what is allowed.
+
+If the model is unreachable, rate-limited or out of quota, the run steps down to a lighter model and then to the deterministic planner, and says so in the trace. A recovery plan therefore never depends on a credential being healthy. Every step — the tool called, its arguments, the stated reason, and what the domain actually answered — is recorded and rendered in the **Recovery Agent** workspace of the dashboard.
+
+## Tech stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | Python 3.11+ (CI on 3.12), FastAPI, Pydantic v2, Uvicorn |
+| Optimization | Pyomo with the HiGHS MILP backend (`highspy`) for Tier 2; a bounded greedy/LNS heuristic for Tier 1 |
+| Legality | A dedicated FAR117/DGCA-oriented rules engine of pure functions, versioned and independently tested |
+| Agent | Six-tool registry with code-enforced guards; deterministic planner plus an optional LLM planner via the `openai` SDK against Google's OpenAI-compatible Gemini endpoint |
+| Frontend | React 19, TypeScript 7, Vite 8, `lucide-react`; pnpm |
+| Frontend tests | Vitest with Testing Library and jsdom |
+| Data plane | Aurora PostgreSQL (`psycopg` v3) for events and outbox, MSK with IAM SASL for publication, Redis for short-lived coordination only |
+| AWS | `boto3`, KMS, S3 with Object Lock, Cognito federation, ALB/WAF/Route 53 |
+| Identity | OIDC with `PyJWT`, RBAC, MFA step-up, separation of duties across scheduler, duty manager and deployment controller |
+| Observability | Prometheus client, OpenTelemetry API and SDK |
+| Infrastructure | Terraform for EKS, Aurora, MSK, Redis, S3, KMS and networking |
+| CI | GitHub Actions: backend, frontend, contracts, infrastructure and security gates, with bandit, gitleaks, `pip-audit` and Trivy |
+| Tests | 273 Python tests and 62 frontend tests |
 
 ## Local setup
 
@@ -74,6 +116,8 @@ The suite covers structured legality, optimistic event concurrency, tier orchest
 - Aurora/MSK adapters and projections exist; the full API-side durable workflow store and solver job consumer are not yet activated.
 - The dashboard is backend-connected but uses an explicitly labelled synthetic scenario rather than carrier feeds.
 - Enterprise OIDC validation, RBAC and MFA step-up paths exist, but no airline IdP is configured in this repository.
+- The recovery agent reasons over the same synthetic roster as the rest of the prototype. Its legality verdicts are real engine output, but the crew, flights and rest hours it reasons about are fixtures.
+- The agent proposes a plan and never publishes one. Nothing it does bypasses the approval and deployment gates, and it holds no carrier credentials.
 - No license has been selected.
 
 ## Project direction

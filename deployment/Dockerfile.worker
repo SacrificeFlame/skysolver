@@ -10,15 +10,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# The base image ships older pip tooling that carries two fixable HIGH CVEs
-# (CVE-2026-24049 in wheel, CVE-2026-23949 in the jaraco.context bundled with
-# setuptools). Upgrade before installing anything else so the image does not
-# inherit them.
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+# Current build tooling, so wheels build against maintained setuptools rather
+# than whatever the base image froze. Removed again further down; nothing here
+# survives into the runtime image.
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Install Python deps
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m pip install --no-cache-dir -r requirements.txt
+
+# Drop the installer from the runtime image. A worker never installs anything at
+# run time, and pip carries its dependencies vendored inside pip/_vendor —
+# currently msgpack 1.1.2 and setuptools 70.3.0, both with HIGH advisories.
+# Those copies cannot be upgraded: the newest pip still ships exactly those
+# versions, so `pip install --upgrade pip` moves the real setuptools and leaves
+# the vendored one untouched. Removing the installer removes them outright and
+# leaves less in the image than we started with.
+RUN python -m pip uninstall --yes pip setuptools wheel \
+    && rm -rf /usr/local/lib/python3.11/ensurepip
 
 # Copy source
 COPY . .
