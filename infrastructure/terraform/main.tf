@@ -83,11 +83,15 @@ resource "aws_security_group" "data" {
     protocol        = "tcp"
     security_groups = [module.eks.node_security_group_id]
   }
+  # Aurora, MSK and ElastiCache sit behind this group. They answer connections
+  # from the cluster; they never need to originate traffic to the internet.
+  # Egress is confined to the VPC so a compromised data node cannot exfiltrate.
   egress {
+    description = "Intra-VPC only; data services do not egress to the internet"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.vpc_cidr]
   }
 }
 

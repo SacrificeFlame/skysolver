@@ -1,0 +1,19 @@
+# Trivy exceptions. Every entry names the finding, scopes it to a path, and
+# states why. Nothing here is a blanket suppression, and nothing here covers
+# code we author — findings in our own Terraform are fixed, not ignored.
+
+misconfigurations:
+  - id: AWS-0104
+    paths:
+      - "terraform-aws-modules/eks/aws/node_groups.tf"
+    statement: >-
+      Unrestricted egress on the EKS managed node group security group, created
+      inside the upstream terraform-aws-modules/eks module. Worker nodes must
+      reach ECR, the EKS control plane, STS and CloudWatch to join the cluster
+      and run at all; removing this rule breaks bootstrap unless every one of
+      those services is fronted by a VPC endpoint. The rule belongs to vendored
+      module code we do not own and cannot change without forking it.
+
+      Accepted deliberately, and scoped to that one file: the identical finding
+      against our own aws_security_group.data was fixed rather than ignored, by
+      confining data-plane egress to the VPC CIDR.

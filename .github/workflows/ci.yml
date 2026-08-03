@@ -93,6 +93,8 @@ jobs:
           # .terraform/, including example manifests we neither ship nor control.
           # Scan our own infrastructure, not the vendored examples.
           skip-dirs: infrastructure/terraform/.terraform
+          # Documented, path-scoped exceptions. See the file for the reasoning.
+          trivyignores: .trivyignore.yaml
 
   security:
     runs-on: ubuntu-latest
