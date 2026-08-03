@@ -171,3 +171,29 @@ describe('AgentWorkspace -> recovery state',()=>{
   expect(scenario.reassign).not.toHaveBeenCalled();
  });
 });
+
+// Regression: an LLM run takes tens of seconds. With no feedback the operator
+// cannot tell a working request from a hung one.
+describe('AgentWorkspace -> in-flight feedback',()=>{
+ it('shows progress while the run is in flight',async()=>{
+  let release:(v:any)=>void=()=>{};
+  vi.spyOn(api,'agentRun').mockReturnValue(new Promise(r=>{release=r}) as any);
+  render(React.createElement(AgentWorkspace,{scenario:makeScenario(),go:vi.fn()}));
+  fireEvent.click(screen.getByRole('button',{name:/Run agent/}));
+
+  expect(await screen.findByText('Working the open cases')).toBeTruthy();
+  expect(screen.getByRole('button',{name:/Running…/})).toBeTruthy();
+  expect(screen.queryByText('No run yet')).toBeNull();
+
+  release(makeRun());
+  await waitFor(()=>expect(screen.getByText('Decision trace')).toBeTruthy());
+  expect(screen.queryByText('Working the open cases')).toBeNull();
+ });
+
+ it('warns that an LLM run is slower than a deterministic one',async()=>{
+  vi.spyOn(api,'agentRun').mockReturnValue(new Promise(()=>{}) as any);
+  render(React.createElement(AgentWorkspace,{scenario:makeScenario(),go:vi.fn()}));
+  fireEvent.click(screen.getByRole('button',{name:/Run agent/}));
+  expect(await screen.findByText(/20–40 seconds/)).toBeTruthy();
+ });
+});

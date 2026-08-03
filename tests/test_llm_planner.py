@@ -326,27 +326,50 @@ def test_non_rate_limit_errors_are_not_retried(store):
     assert len(planner._client.chat.completions.requests) == 1
 
 
-def test_throttle_paces_calls_without_delaying_the_first(store, monkeypatch):
-    sleeps = []
-    monkeypatch.setattr("agents.llm_planner.time.sleep", sleeps.append)
-    script = [
-        SimpleNamespace(content="one", tool_calls=[_tool_call("c1", "get_operational_picture", {})]),
-        SimpleNamespace(content="two", tool_calls=[
-            _tool_call("c2", "list_candidate_crew", {"flight_id": "AI807"})]),
-        SimpleNamespace(content="done", tool_calls=None),
+def test_calls_are_not_paced_until_the_provider_pushes_back(store,monkeypatch):
+    """An unconstrained run must not pay a throttle it has no evidence it needs."""
+    sleeps=[]
+    monkeypatch.setattr("agents.llm_planner.time.sleep",sleeps.append)
+    script=[
+        SimpleNamespace(content="one",tool_calls=[_tool_call("c1","get_operational_picture",{})]),
+        SimpleNamespace(content="two",tool_calls=[
+            _tool_call("c2","list_candidate_crew",{"flight_id":"AI807"})]),
+        SimpleNamespace(content="done",tool_calls=None),
     ]
-    planner = OpenAIPlanner(provider="gemini", client=FakeClient(script), min_interval_s=5.0)
-    RecoveryAgent(store, planner=planner).run()
+    planner=OpenAIPlanner(provider="gemini",client=FakeClient(script))
+    RecoveryAgent(store,planner=planner).run()
 
-    assert sleeps, "expected the throttle to pace subsequent calls"
-    assert all(0 < s <= 5.0 for s in sleeps)
+    assert sleeps==[], "a healthy run should never wait"
+    assert planner._min_interval_s==0
 
 
-def test_gemini_is_throttled_by_default_and_openai_is_not():
+def test_pacing_engages_after_a_rate_limit_and_stays_on(store,monkeypatch):
+    sleeps=[]
+    monkeypatch.setattr("agents.llm_planner.time.sleep",sleeps.append)
+    script=[
+        RateLimitError("429 slow down"),
+        SimpleNamespace(content="one",tool_calls=[_tool_call("c1","get_operational_picture",{})]),
+        SimpleNamespace(content="two",tool_calls=[
+            _tool_call("c2","list_candidate_crew",{"flight_id":"AI807"})]),
+        SimpleNamespace(content="done",tool_calls=None),
+    ]
+    planner=OpenAIPlanner(provider="gemini",client=FakeClient(script),backoff_s=0)
+    result=RecoveryAgent(store,planner=planner).run()
+
+    assert planner._min_interval_s==PROVIDERS["gemini"]["min_interval_s"]
+    assert any("spaced" in n for n in result.notes)
+    # Paced from then on, but never degraded: the retry succeeded.
+    assert "deterministic" not in result.trace.planner
+    assert any(s>0 for s in sleeps)
+
+
+def test_gemini_has_a_pace_to_fall_back_to_and_openai_does_not():
     gemini = OpenAIPlanner(provider="gemini", client=FakeClient([]))
     openai = OpenAIPlanner(provider="openai", client=FakeClient([]))
-    assert gemini._min_interval_s > 0
-    assert openai._min_interval_s == 0
+    # Configured, but not applied until a 429 proves it is needed.
+    assert gemini._paced_interval_s > 0
+    assert gemini._min_interval_s == 0
+    assert openai._paced_interval_s == 0
 
 
 # --------------------------------------------------------------------------

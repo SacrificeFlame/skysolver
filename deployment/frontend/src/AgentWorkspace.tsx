@@ -45,7 +45,17 @@ export default function AgentWorkspace({scenario,go}:{scenario:Scenario;go:(r:'c
  const [revealed,setRevealed]=useState(0);
  const [showTools,setShowTools]=useState(false);
  const [applied,setApplied]=useState<Applied|null>(null);
+ const [elapsed,setElapsed]=useState(0);
  const timers=useRef<number[]>([]);
+
+ // An LLM run makes a tool call per step and can take tens of seconds. Without
+ // a moving number it reads as a hung request rather than a working one.
+ useEffect(()=>{
+  if(!busy){setElapsed(0);return}
+  const started=Date.now();
+  const tick=window.setInterval(()=>setElapsed(Math.round((Date.now()-started)/1000)),500);
+  return()=>clearInterval(tick);
+ },[busy]);
 
  useEffect(()=>{api.agentTools().then(setTools).catch(()=>setTools(null))},[]);
  // Clear any pending reveal timers if the component unmounts mid-animation.
@@ -96,7 +106,7 @@ export default function AgentWorkspace({scenario,go}:{scenario:Scenario;go:(r:'c
    </div>
    <div className="page-actions">
     {run&&<span className={`badge ${degraded?'warning':'success'}`}>{run.planner}</span>}
-    <button className="primary" onClick={start} disabled={busy}><Play/> {busy?'Running…':run?'Run again':'Run agent'}</button>
+    <button className="primary" onClick={start} disabled={busy}><Play/> {busy?`Running… ${elapsed}s`:run?'Run again':'Run agent'}</button>
    </div>
   </header>
 
@@ -121,6 +131,18 @@ export default function AgentWorkspace({scenario,go}:{scenario:Scenario;go:(r:'c
   </section>}
 
   {error&&<div className="dh-note"><AlertTriangle/><span>{error}</span></div>}
+
+  {busy&&<section className="card agent-idle">
+   <Bot/>
+   <div>
+    <h2>Working the open cases</h2>
+    <p className="muted small">
+     {planner==='deterministic'
+      ?'Evaluating candidates against the rules engine.'
+      :'Each step is a separate model call, so a full run takes roughly 20–40 seconds. The trace appears once every case is settled.'}
+    </p>
+   </div>
+  </section>}
 
   {!run&&!busy&&!error&&<section className="card agent-idle">
    <Bot/>

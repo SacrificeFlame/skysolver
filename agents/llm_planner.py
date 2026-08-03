@@ -57,6 +57,11 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         # The free tier allows roughly 10 requests/minute. An unthrottled run
         # issues ~30, so pace the calls rather than burn the allowance and
         # degrade halfway through a demonstration.
+        # Pacing applied only *after* the provider rate-limits, not up front.
+        # Free-tier Gemini allows roughly 10 requests/minute; an unthrottled run
+        # issues ~30 and may trip it. Pacing every run pre-emptively cost ~55s of
+        # deliberate waiting on runs that would have been fine, so the interval
+        # now engages on the first 429 and stays on for the rest of the run.
         "min_interval_s": 5.0,
     },
 }
@@ -156,9 +161,12 @@ class OpenAIPlanner:
             )
         self._temperature = temperature
         self._max_tool_calls = max_tool_calls
-        self._min_interval_s = (
+        # The pace to fall back to once the provider pushes back. Not applied
+        # until then: see _wait_for_slot.
+        self._paced_interval_s = (
             min_interval_s if min_interval_s is not None else config.get("min_interval_s", 0.0)
         )
+        self._min_interval_s = 0.0
         self._rate_limit_retries = rate_limit_retries
         self._backoff_s = backoff_s
         self._last_call_at = 0.0
@@ -268,9 +276,22 @@ class OpenAIPlanner:
             except Exception as exc:
                 if not _is_rate_limit(exc) or attempt == self._rate_limit_retries:
                     raise
+                # The provider has pushed back, so stop firing at full speed for
+                # the rest of the run. Paying this cost only once we have
+                # evidence we need it keeps an unconstrained run fast.
+                self._engage_pacing()
                 last_error = exc
                 time.sleep(self._backoff_s * (2**attempt))
         raise last_error  # pragma: no cover - loop always returns or raises
+
+    def _engage_pacing(self) -> None:
+        if self._min_interval_s or not self._paced_interval_s:
+            return
+        self._min_interval_s = self._paced_interval_s
+        self.events.append(
+            f"Rate limited, so calls are now spaced {self._paced_interval_s:g}s apart "
+            "for the rest of the run."
+        )
 
     def _wait_for_slot(self) -> None:
         if self._min_interval_s <= 0:
