@@ -123,11 +123,57 @@ def test_model_rationale_is_captured_in_the_trace(store, monkeypatch):
     assert result.trace.steps[0].rationale == "Establishing the picture first."
 
 
-def test_parallel_tool_calls_are_disabled(store, monkeypatch):
+def test_batched_tool_calls_are_allowed(store, monkeypatch):
     script = [SimpleNamespace(content="done", tool_calls=None)]
     planner = _planner(script, monkeypatch)
     RecoveryAgent(store, planner=planner).run()
-    assert planner._client.chat.completions.requests[0]["parallel_tool_calls"] is False
+    assert planner._client.chat.completions.requests[0]["parallel_tool_calls"] is True
+
+
+def test_a_batched_turn_costs_one_round_trip_not_one_per_call(store, monkeypatch):
+    """The wall-clock cost of a run is API round trips, not tool calls."""
+    script = [
+        SimpleNamespace(content="Evaluate both B787 candidates at once.", tool_calls=[
+            _tool_call("c1", "preview_reassignment", {"flight_id": "AI807", "crew_id": "IC-507"}),
+            _tool_call("c2", "preview_reassignment", {"flight_id": "AI807", "crew_id": "IC-560"}),
+            _tool_call("c3", "list_candidate_crew", {"flight_id": "AI421"}),
+        ]),
+        SimpleNamespace(content="done", tool_calls=None),
+    ]
+    planner = _planner(script, monkeypatch)
+    result = RecoveryAgent(store, planner=planner).run()
+
+    # Three tools executed, two API calls: the batch plus the closing turn.
+    assert len(result.trace.steps) == 3
+    assert len(planner._client.chat.completions.requests) == 2
+
+    # Each still ran through the registry and produced a real verdict.
+    codes = {c for s in result.trace.steps if s.tool == "preview_reassignment"
+             for c in [v["code"] for v in s.observation["data"]["rule_violations"]]}
+    assert codes == {"MIN_REST", "CREW_POSITION"}
+
+    # Every batched call was answered individually in the transcript.
+    call_ids = {c["id"] for m in planner._messages if m.get("tool_calls") for c in m["tool_calls"]}
+    reply_ids = {m["tool_call_id"] for m in planner._messages if m["role"] == "tool"}
+    assert call_ids == reply_ids == {"c1", "c2", "c3"}
+
+
+def test_guards_still_apply_inside_a_single_batch(store, monkeypatch):
+    """Batching must not let a commit skip the verdict it depends on."""
+    script = [
+        SimpleNamespace(content="Preview then commit together.", tool_calls=[
+            # IC-507 fails MIN_REST, so the commit batched behind it must be refused.
+            _tool_call("c1", "preview_reassignment", {"flight_id": "AI807", "crew_id": "IC-507"}),
+            _tool_call("c2", "commit_reassignment", {"flight_id": "AI807", "crew_id": "IC-507"}),
+        ]),
+        SimpleNamespace(content="Understood.", tool_calls=None),
+    ]
+    result = RecoveryAgent(store, planner=_planner(script, monkeypatch)).run()
+
+    assert result.resolved == []
+    commit = next(s for s in result.trace.steps if s.tool == "commit_reassignment")
+    assert commit.ok is False
+    assert "no legal preview on record" in commit.observation["error"]
 
 
 # --------------------------------------------------------------------------

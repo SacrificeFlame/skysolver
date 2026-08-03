@@ -139,7 +139,7 @@ export default function AgentWorkspace({scenario,go}:{scenario:Scenario;go:(r:'c
     <p className="muted small">
      {planner==='deterministic'
       ?'Evaluating candidates against the rules engine.'
-      :'Each step is a separate model call, so a full run takes roughly 20–40 seconds. The trace appears once every case is settled.'}
+      :'The model batches independent checks, so this is a handful of calls rather than one per step. The trace appears once every case is settled.'}
     </p>
    </div>
   </section>}

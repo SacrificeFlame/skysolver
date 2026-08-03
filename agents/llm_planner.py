@@ -91,7 +91,9 @@ Rules of engagement:
 6. Prefer not to spend a scarce type rating on a flight that many crew could \
    cover. A captain rated on both B787 and A321 is worth more to the B787 flight.
 
-Call exactly one tool per turn. Start with get_operational_picture.
+Call as many tools in one turn as are independent of each other. Previewing several candidates, or working different flights, can all go in a single turn - every extra turn is a network round trip and the operator is waiting. The one thing you must not batch is a commit with the preview it depends on: you cannot know a candidate is legal until the engine has answered.
+
+Start with get_operational_picture.
 
 When every flight is either committed or escalated, stop calling tools and reply \
 with a short handover note for the duty manager: what you resolved, what you \
@@ -177,6 +179,7 @@ class OpenAIPlanner:
         self._degraded = False
         self._messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
         self._pending_tool_call_id: Optional[str] = None
+        self._queue: List[Any] = []
         self._tools: Optional[List[Dict[str, Any]]] = None
         self.events: List[str] = []
         self.handover: str = ""
@@ -192,6 +195,13 @@ class OpenAIPlanner:
                 for spec in _as_openai_functions(state.registry.anthropic_tools())
             ]
             self._messages.append({"role": "user", "content": _kickoff(state)})
+
+        # Anything the model asked for in the same turn is served without
+        # another API call. This is where the wall-clock time goes: one round
+        # trip per tool call turns a three-flight recovery into ~11 sequential
+        # requests, and almost none of them depend on each other.
+        if self._queue:
+            return self._next_queued()
 
         try:
             message = self._complete()
@@ -212,30 +222,42 @@ class OpenAIPlanner:
             self.handover = (message.content or "").strip()
             return None
 
-        call = message.tool_calls[0]
-        try:
-            args = json.loads(call.function.arguments or "{}")
-        except json.JSONDecodeError:
-            args = {}
-
-        # The reason is an argument, not a side effect of narration — pull it
-        # out before the call reaches the domain handlers.
-        stated_reason = str(args.pop(RATIONALE_FIELD, "") or "").strip()
-
         # Echo the assistant turn back verbatim rather than rebuilding it.
         # Providers attach fields we must not drop: Gemini returns a
         # thought_signature under tool_calls[].extra_content.google, and omitting
         # it on the next request is rejected with a 400.
         self._messages.append(_as_message_dict(message))
-        self._pending_tool_call_id = call.id
 
         narration = (message.content or "").strip()
-        return Decision(
+        self._queue = [self._decision_for(call, narration) for call in message.tool_calls]
+        return self._next_queued()
+
+    def _decision_for(self, call, narration: str):
+        try:
+            args = json.loads(call.function.arguments or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        # The reason is an argument, not a side effect of narration — pull it
+        # out before the call reaches the domain handlers.
+        stated_reason = str(args.pop(RATIONALE_FIELD, "") or "").strip()
+        return call.id, Decision(
             tool=call.function.name,
             args=args,
             rationale=stated_reason or narration or "(model gave no stated reason)",
             phase=_phase_for(call.function.name),
         )
+
+    def _next_queued(self) -> Optional[Decision]:
+        """Hand back the next call from the current turn.
+
+        Each one still runs through the guarded registry individually and in
+        order, so a batched commit is checked against a preview from earlier in
+        the same batch exactly as it would be across turns. What batching saves
+        is round trips, not scrutiny.
+        """
+        call_id, decision = self._queue.pop(0)
+        self._pending_tool_call_id = call_id
+        return decision
 
     def observe(self, decision: Decision, result: ToolResult) -> None:
         """Feed the tool result back so the model can re-plan against reality."""
@@ -269,7 +291,7 @@ class OpenAIPlanner:
                     messages=self._messages,
                     tools=self._tools,
                     tool_choice="auto",
-                    parallel_tool_calls=False,
+                    parallel_tool_calls=True,
                     temperature=self._temperature,
                 )
                 return response.choices[0].message
@@ -315,6 +337,10 @@ class OpenAIPlanner:
 
     def _degrade(self, reason: str) -> None:
         self._degraded = True
+        # Anything still queued from the last turn belongs to a conversation we
+        # are abandoning; the fallback plans from the registry, not from it.
+        self._queue = []
+        self._pending_tool_call_id = None
         self.name = f"{self.provider} → deterministic"
         # Kept to the cause only — the caller adds the reassurance, so stating
         # it here too reads as duplicated filler in the UI banner.

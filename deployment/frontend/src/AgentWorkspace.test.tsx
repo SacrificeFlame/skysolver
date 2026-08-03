@@ -190,10 +190,10 @@ describe('AgentWorkspace -> in-flight feedback',()=>{
   expect(screen.queryByText('Working the open cases')).toBeNull();
  });
 
- it('warns that an LLM run is slower than a deterministic one',async()=>{
+ it('explains what an LLM run is doing while it waits',async()=>{
   vi.spyOn(api,'agentRun').mockReturnValue(new Promise(()=>{}) as any);
   render(React.createElement(AgentWorkspace,{scenario:makeScenario(),go:vi.fn()}));
   fireEvent.click(screen.getByRole('button',{name:/Run agent/}));
-  expect(await screen.findByText(/20–40 seconds/)).toBeTruthy();
+  expect(await screen.findByText(/batches independent checks/)).toBeTruthy();
  });
 });
