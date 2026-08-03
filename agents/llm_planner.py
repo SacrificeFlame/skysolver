@@ -45,13 +45,16 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
     },
     "gemini": {
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        # gemini-2.0-flash is quota-limited on the free tier and gemini-2.5-flash
-        # is closed to new projects; the rolling alias is the reliable choice.
-        "default_model": "gemini-flash-latest",
-        # Free-tier quota is per-model. A lighter model has its own, larger
-        # allowance, so an exhausted flash quota should step down rather than
-        # abandon the LLM planner entirely.
-        "fallback_models": ("gemini-flash-lite-latest",),
+        # Lite first, deliberately. This loop is many short tool-calling turns
+        # rather than one long generation, so per-call latency dominates and the
+        # lighter model is markedly quicker. It also has its own free-tier
+        # allowance, which matters because flash's is easily exhausted in a day
+        # of testing. Both are Gemini; the step-up is there when a run needs the
+        # heavier model's judgement.
+        "default_model": "gemini-flash-lite-latest",
+        # Free-tier quota is per model, so an exhausted allowance on one is not
+        # a reason to abandon LLM planning.
+        "fallback_models": ("gemini-flash-latest",),
         "key_env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
         "console": "aistudio.google.com/apikey",
         # The free tier allows roughly 10 requests/minute. An unthrottled run
@@ -195,6 +198,20 @@ class OpenAIPlanner:
                 for spec in _as_openai_functions(state.registry.anthropic_tools())
             ]
             self._messages.append({"role": "user", "content": _kickoff(state)})
+            # Reading the picture is never a judgement call - nothing can be
+            # decided before it. Asking the model to request it costs a full
+            # round trip (~1.2s) to be told the only possible answer, so take
+            # that step directly and let the first API call already carry it.
+            self._queue = [(
+                BOOTSTRAP_CALL_ID,
+                Decision(
+                    tool="get_operational_picture",
+                    args={},
+                    rationale="Read the disruption state before proposing anything.",
+                    phase="perceive",
+                ),
+            )]
+            return self._next_queued()
 
         # Anything the model asked for in the same turn is served without
         # another API call. This is where the wall-clock time goes: one round
@@ -263,6 +280,16 @@ class OpenAIPlanner:
         """Feed the tool result back so the model can re-plan against reality."""
         if self._degraded or self._pending_tool_call_id is None:
             return
+        if self._pending_tool_call_id is BOOTSTRAP_CALL_ID:
+            # No assistant tool_call preceded this one, so it cannot be answered
+            # with a tool message. Hand it over as context instead.
+            self._messages.append({
+                "role": "user",
+                "content": "Current operational picture: "
+                + json.dumps(_compact(result.to_dict()))[:6000],
+            })
+            self._pending_tool_call_id = None
+            return
         self._messages.append(
             {
                 "role": "tool",
@@ -296,6 +323,12 @@ class OpenAIPlanner:
                 )
                 return response.choices[0].message
             except Exception as exc:
+                # Exhausted quota does not recover in six seconds. Retrying it,
+                # and slowing every later call because of it, spends the
+                # operator's time on a wait that cannot help — step down to the
+                # next model immediately instead.
+                if _is_quota_exhausted(exc):
+                    raise
                 if not _is_rate_limit(exc) or attempt == self._rate_limit_retries:
                     raise
                 # The provider has pushed back, so stop firing at full speed for
@@ -330,6 +363,9 @@ class OpenAIPlanner:
         previous = self.model
         self.model = self._model_queue.pop(0)
         self.name = f"{self.provider}:{self.model}"
+        # Pacing is per model. Carrying the previous model's penalty onto a
+        # fresh allowance slows the run for a limit it has not hit.
+        self._min_interval_s = 0.0
         self.events.append(
             f"{previous} was out of quota, so the run continued on {self.model}."
         )
@@ -364,6 +400,14 @@ def _explain(exc: Exception) -> str:
     if status and status >= 500:
         return "The model provider returned a server error."
     return f"The model provider could not be reached ({type(exc).__name__})."
+
+
+def _is_quota_exhausted(exc: Exception) -> bool:
+    """A 429 that will not clear by waiting: the allowance itself is spent."""
+    if not _is_rate_limit(exc):
+        return False
+    text = str(exc).lower()
+    return "quota" in text or "billing" in text
 
 
 def _is_rate_limit(exc: Exception) -> bool:
@@ -403,6 +447,9 @@ def _first_env(names) -> Optional[str]:
             return value
     return None
 
+
+# Sentinel for the one step taken without asking the model first.
+BOOTSTRAP_CALL_ID = "__bootstrap__"
 
 RATIONALE_FIELD = "why"
 RATIONALE_DESCRIPTION = (

@@ -120,7 +120,9 @@ def test_model_rationale_is_captured_in_the_trace(store, monkeypatch):
         SimpleNamespace(content="done", tool_calls=None),
     ]
     result = RecoveryAgent(store, planner=_planner(script, monkeypatch)).run()
-    assert result.trace.steps[0].rationale == "Establishing the picture first."
+    # Step 1 is the seeded perceive, taken without asking the model.
+    assert result.trace.steps[0].tool == "get_operational_picture"
+    assert result.trace.steps[1].rationale == "Establishing the picture first."
 
 
 def test_batched_tool_calls_are_allowed(store, monkeypatch):
@@ -143,8 +145,10 @@ def test_a_batched_turn_costs_one_round_trip_not_one_per_call(store, monkeypatch
     planner = _planner(script, monkeypatch)
     result = RecoveryAgent(store, planner=planner).run()
 
-    # Three tools executed, two API calls: the batch plus the closing turn.
-    assert len(result.trace.steps) == 3
+    # Four tools executed, two API calls: the seeded perceive costs nothing,
+    # then the batch of three, then the closing turn.
+    assert len(result.trace.steps) == 4
+    assert result.trace.steps[0].tool == "get_operational_picture"
     assert len(planner._client.chat.completions.requests) == 2
 
     # Each still ran through the registry and produced a real verdict.
@@ -352,12 +356,11 @@ def test_a_persistent_rate_limit_degrades_after_the_retries(store):
     )
     result = RecoveryAgent(store, planner=planner).run()
 
-    # Three attempts per model (initial + 2 retries) across the whole chain,
-    # then it gives up. The chain length is configuration, so assert the shape.
+    # Exhausted quota is not retried - one attempt per model, then it gives up.
     attempts = planner._client.chat.completions.requests
-    assert len(attempts) == 3 * (1 + len(PROVIDERS["gemini"]["fallback_models"]))
+    assert len(attempts) == 1 + len(PROVIDERS["gemini"]["fallback_models"])
     assert {a["model"] for a in attempts} == {
-        "gemini-flash-latest", *PROVIDERS["gemini"]["fallback_models"]
+        PROVIDERS["gemini"]["default_model"], *PROVIDERS["gemini"]["fallback_models"]
     }
     assert any("deterministic planner" in n for n in result.notes)
     assert result.unresolved == []  # deterministic planner still finished the job
@@ -423,12 +426,12 @@ def test_gemini_has_a_pace_to_fall_back_to_and_openai_does_not():
 # --------------------------------------------------------------------------
 
 def test_quota_on_the_primary_model_steps_down_before_degrading(store):
+    # One refusal is enough: exhausted quota is not retried, because waiting
+    # cannot refill it. The run should move to the next model immediately.
     script = [
         RateLimitError("429 exceeded your current quota"),
-        RateLimitError("429 exceeded your current quota"),
-        RateLimitError("429 exceeded your current quota"),
-        SimpleNamespace(content="On the lite model now.", tool_calls=[
-            _tool_call("c1", "get_operational_picture", {})]),
+        SimpleNamespace(content="On the next model now.", tool_calls=[
+            _tool_call("c1", "list_candidate_crew", {"flight_id": "AI807"})]),
         SimpleNamespace(content="done", tool_calls=None),
     ]
     planner = OpenAIPlanner(
@@ -437,10 +440,14 @@ def test_quota_on_the_primary_model_steps_down_before_degrading(store):
     )
     result = RecoveryAgent(store, planner=planner).run()
 
-    assert planner.model == "gemini-flash-lite-latest"
-    assert "continued on gemini-flash-lite-latest" in " ".join(result.notes)
+    stepped_to = PROVIDERS["gemini"]["fallback_models"][0]
+    assert planner.model == stepped_to
+    assert f"continued on {stepped_to}" in " ".join(result.notes)
     assert "deterministic" not in result.trace.planner  # never gave up on the LLM
-    assert result.trace.steps[0].tool == "get_operational_picture"
+    # The refused model is not tried twice: the very next request is the
+    # fallback. No time is spent waiting on a quota that cannot refill.
+    models = [r["model"] for r in planner._client.chat.completions.requests]
+    assert models[:2] == [PROVIDERS["gemini"]["default_model"], stepped_to]
 
 
 def test_quota_on_every_model_finally_degrades(store):
