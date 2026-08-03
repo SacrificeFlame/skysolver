@@ -10,6 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# The base image ships older pip tooling that carries two fixable HIGH CVEs
+# (CVE-2026-24049 in wheel, CVE-2026-23949 in the jaraco.context bundled with
+# setuptools). Upgrade before installing anything else so the image does not
+# inherit them.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
 # Install Python deps
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
