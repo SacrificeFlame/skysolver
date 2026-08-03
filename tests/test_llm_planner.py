@@ -295,7 +295,8 @@ def test_a_transient_rate_limit_is_retried_not_fatal(store):
 
 
 def test_a_persistent_rate_limit_degrades_after_the_retries(store):
-    script = [RateLimitError("429 quota spent")] * 5
+    # Enough failures that every model in the chain is exhausted.
+    script = [RateLimitError("429 quota spent")] * 20
     planner = OpenAIPlanner(
         provider="gemini",
         client=FakeClient(script),
@@ -305,9 +306,14 @@ def test_a_persistent_rate_limit_degrades_after_the_retries(store):
     )
     result = RecoveryAgent(store, planner=planner).run()
 
-    assert len(result.notes) == 1
-    # Three attempts made (initial + 2 retries) before giving up.
-    assert len(planner._client.chat.completions.requests) == 3
+    # Three attempts per model (initial + 2 retries) across the whole chain,
+    # then it gives up. The chain length is configuration, so assert the shape.
+    attempts = planner._client.chat.completions.requests
+    assert len(attempts) == 3 * (1 + len(PROVIDERS["gemini"]["fallback_models"]))
+    assert {a["model"] for a in attempts} == {
+        "gemini-flash-latest", *PROVIDERS["gemini"]["fallback_models"]
+    }
+    assert any("deterministic planner" in n for n in result.notes)
     assert result.unresolved == []  # deterministic planner still finished the job
 
 
@@ -341,3 +347,61 @@ def test_gemini_is_throttled_by_default_and_openai_is_not():
     openai = OpenAIPlanner(provider="openai", client=FakeClient([]))
     assert gemini._min_interval_s > 0
     assert openai._min_interval_s == 0
+
+
+# --------------------------------------------------------------------------
+# Model fallback: quota is charged per model, so step down before giving up
+# --------------------------------------------------------------------------
+
+def test_quota_on_the_primary_model_steps_down_before_degrading(store):
+    script = [
+        RateLimitError("429 exceeded your current quota"),
+        RateLimitError("429 exceeded your current quota"),
+        RateLimitError("429 exceeded your current quota"),
+        SimpleNamespace(content="On the lite model now.", tool_calls=[
+            _tool_call("c1", "get_operational_picture", {})]),
+        SimpleNamespace(content="done", tool_calls=None),
+    ]
+    planner = OpenAIPlanner(
+        provider="gemini", client=FakeClient(script),
+        min_interval_s=0, backoff_s=0, rate_limit_retries=2,
+    )
+    result = RecoveryAgent(store, planner=planner).run()
+
+    assert planner.model == "gemini-flash-lite-latest"
+    assert "continued on gemini-flash-lite-latest" in " ".join(result.notes)
+    assert "deterministic" not in result.trace.planner  # never gave up on the LLM
+    assert result.trace.steps[0].tool == "get_operational_picture"
+
+
+def test_quota_on_every_model_finally_degrades(store):
+    planner = OpenAIPlanner(
+        provider="gemini", client=FakeClient([RateLimitError("429 quota")] * 12),
+        min_interval_s=0, backoff_s=0, rate_limit_retries=1,
+    )
+    result = RecoveryAgent(store, planner=planner).run()
+
+    assert "deterministic" in result.trace.planner
+    assert result.unresolved == []  # the plan still completes
+    assert any("continued on" in n for n in result.notes)
+    assert any("quota is exhausted" in n for n in result.notes)
+
+
+def test_an_explicit_model_choice_is_not_duplicated_in_the_chain():
+    planner = OpenAIPlanner(
+        provider="gemini", model="gemini-flash-lite-latest", client=FakeClient([]),
+    )
+    assert "gemini-flash-lite-latest" not in planner._model_queue
+
+
+def test_openai_has_no_model_chain_configured():
+    planner = OpenAIPlanner(provider="openai", client=FakeClient([]))
+    assert planner._model_queue == []
+
+
+def test_degrade_note_does_not_duplicate_the_callers_reassurance():
+    planner = OpenAIPlanner(provider="gemini", client=FakeClient([]))
+    planner._degrade("The model provider's quota is exhausted.")
+    note = planner.events[0]
+    assert note.count("recovery plan") == 0  # the UI says that once, not twice
+    assert note.endswith("for the remainder of the run.")

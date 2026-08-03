@@ -30,3 +30,6 @@ mcp_body.json
 .env.*
 !.env.example
 *.key
+
+# stray local server logs
+*.out

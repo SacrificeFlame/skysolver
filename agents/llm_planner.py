@@ -48,6 +48,10 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         # gemini-2.0-flash is quota-limited on the free tier and gemini-2.5-flash
         # is closed to new projects; the rolling alias is the reliable choice.
         "default_model": "gemini-flash-latest",
+        # Free-tier quota is per-model. A lighter model has its own, larger
+        # allowance, so an exhausted flash quota should step down rather than
+        # abandon the LLM planner entirely.
+        "fallback_models": ("gemini-flash-lite-latest",),
         "key_env": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
         "console": "aistudio.google.com/apikey",
         # The free tier allows roughly 10 requests/minute. An unthrottled run
@@ -87,6 +91,10 @@ Call exactly one tool per turn. Start with get_operational_picture.
 When every flight is either committed or escalated, stop calling tools and reply \
 with a short handover note for the duty manager: what you resolved, what you \
 escalated, and what decision the human now owns.
+
+Write that note as two or three sentences of plain prose. It is rendered as text \
+in an operations console, so do not use markdown - no headings, asterisks, bullet \
+lists, backticks or numbered sections. Lead with what the human now owns.
 """
 
 
@@ -154,6 +162,9 @@ class OpenAIPlanner:
         self._rate_limit_retries = rate_limit_retries
         self._backoff_s = backoff_s
         self._last_call_at = 0.0
+        # Models to try, in order, before falling back to the deterministic
+        # planner. Skips any that duplicate an explicitly requested model.
+        self._model_queue = [m for m in config.get("fallback_models", ()) if m != self.model]
         self._fallback = fallback or DeterministicPlanner()
         self._degraded = False
         self._messages: List[Dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -177,8 +188,17 @@ class OpenAIPlanner:
         try:
             message = self._complete()
         except Exception as exc:  # network, auth, quota, transient 5xx
-            self._degrade(_explain(exc))
-            return self._fallback.propose(state)
+            # Quota is charged per model. Step down to a lighter model with its
+            # own allowance before abandoning LLM planning altogether.
+            if _is_rate_limit(exc) and self._step_down_model():
+                try:
+                    message = self._complete()
+                except Exception as retry_exc:
+                    self._degrade(_explain(retry_exc))
+                    return self._fallback.propose(state)
+            else:
+                self._degrade(_explain(exc))
+                return self._fallback.propose(state)
 
         if not getattr(message, "tool_calls", None):
             self.handover = (message.content or "").strip()
@@ -260,12 +280,25 @@ class OpenAIPlanner:
             time.sleep(self._min_interval_s - elapsed)
         self._last_call_at = time.monotonic()
 
+    def _step_down_model(self) -> bool:
+        """Move to the next model in the chain. False when none are left."""
+        if not self._model_queue:
+            return False
+        previous = self.model
+        self.model = self._model_queue.pop(0)
+        self.name = f"{self.provider}:{self.model}"
+        self.events.append(
+            f"{previous} was out of quota, so the run continued on {self.model}."
+        )
+        return True
+
     def _degrade(self, reason: str) -> None:
         self._degraded = True
         self.name = f"{self.provider} → deterministic"
+        # Kept to the cause only — the caller adds the reassurance, so stating
+        # it here too reads as duplicated filler in the UI banner.
         self.events.append(
-            f"{reason} Switched to the deterministic planner for the remainder of "
-            "the run; the recovery plan is unaffected."
+            f"{reason} Switched to the deterministic planner for the remainder of the run."
         )
 
 

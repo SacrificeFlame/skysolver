@@ -444,4 +444,4 @@ tr.clickable:hover td{background:#131f3a}
 .ao-checks{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px}
 .ao-blockers{display:flex;flex-direction:column;gap:7px;margin-top:9px}
 .ao-blocker{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 11px;border-radius:6px;background:#0d1c25;border:1px solid #2a3c47;font-size:11px}
-.agent-handover{margin:0;font-size:12.5px;line-height:1.65;color:#a9bdd8}
+.agent-handover{margin:0;font-size:12.5px;line-height:1.65;color:#a9bdd8;white-space:pre-wrap}
