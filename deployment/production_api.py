@@ -65,6 +65,11 @@ class ReassignmentPreviewRequest(BaseModel):
     crew_id: str = Field(min_length=1, max_length=64)
 
 
+class AssumeRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["scheduler-demo", "duty-manager", "deployment-controller"]
+
+
 class AgentRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     planner: Literal["deterministic", "gemini", "openai"] = "deterministic"
@@ -235,6 +240,30 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
         token = issue_session(subject, role=role)
         response.headers["Set-Cookie"] = session_cookie(token, os.environ.get("SKYSOLVER_COOKIE_SECURE", "false").lower() == "true")
         return {"ok": True, "redirect": "/dashboard", "operator": {"subject": subject, "role": role, "tenant_id": "synthetic-airline"}}
+
+    @app.post("/api/v1/session/role", include_in_schema=False)
+    def assume_role(body: AssumeRoleRequest, response: Response, principal: Principal = Depends(principal)):
+        """Re-issue the caller's session under a different demo role.
+
+        Separation of duties requires a distinct role session per governance
+        step, so the console has to switch roles between approving and
+        deploying. It previously did that by signing in again with credentials
+        compiled into the frontend bundle, which published them and broke the
+        moment the demo password was changed.
+
+        The exchange happens here instead: the caller must already hold a valid
+        session, and no password crosses the wire. This is a demo affordance -
+        it lets one operator hold every role, which a real deployment would not.
+        The gates it feeds are still enforced server-side.
+        """
+        if runtime.is_production_shaped:
+            raise HTTPException(status_code=404, detail={"code": "demo_role_switch_disabled"})
+        subject = DEMO_ROLE_SUBJECTS[body.role]
+        token = issue_session(subject, role=body.role)
+        response.headers["Set-Cookie"] = session_cookie(
+            token, os.environ.get("SKYSOLVER_COOKIE_SECURE", "false").lower() == "true"
+        )
+        return {"ok": True, "operator": {"subject": subject, "role": body.role}}
 
     @app.get("/api/v1/overview")
     def overview(_: Principal = Depends(principal)):

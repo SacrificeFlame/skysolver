@@ -90,6 +90,10 @@ export const api={
   note:(action:string,detail:string)=>request<{ok:boolean}>('/api/v1/audit',{method:'POST',body:JSON.stringify({action,detail})}),
   // Recovery agent. An LLM planner that is unconfigured or rate-limited degrades
   // to the deterministic planner server-side; the response says which one ran.
+  // Role elevation without re-authenticating. The console must act as a
+  // different role per governance step; doing that by signing in again meant
+  // shipping the demo password in this bundle.
+  assumeRole:(role:'scheduler-demo'|'duty-manager'|'deployment-controller')=>request<{ok:boolean;operator:{subject:string;role:string}}>('/api/v1/session/role',{method:'POST',body:JSON.stringify({role})}),
   agentTools:()=>request<AgentToolset>('/api/v1/agent/tools'),
   agentRun:(planner:'deterministic'|'gemini'|'openai'='deterministic')=>request<AgentRun>('/api/v1/agent/run',{method:'POST',body:JSON.stringify({planner})})
 };

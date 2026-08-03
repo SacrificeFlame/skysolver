@@ -80,3 +80,39 @@ def test_unconfigured_llm_planner_degrades_instead_of_failing(monkeypatch):
 
 def test_unknown_planner_is_rejected_by_the_schema():
     assert client().post("/api/v1/agent/run", json={"planner": "hal9000"}).status_code == 422
+
+
+# Regression: role elevation used to sign in again with credentials compiled
+# into the frontend bundle. Changing the demo password broke approval and
+# logged the operator out, because the failed login returned 401.
+def test_role_can_be_assumed_without_re_authenticating():
+    instance = client()
+    response = instance.post("/api/v1/session/role", json={"role": "duty-manager"})
+
+    assert response.status_code == 200
+    assert response.json()["operator"]["role"] == "duty-manager"
+    assert "Set-Cookie" in response.headers
+
+
+def test_assuming_a_role_requires_an_existing_session():
+    anonymous = TestClient(create_app())
+    assert anonymous.post("/api/v1/session/role", json={"role": "duty-manager"}).status_code == 401
+
+
+def test_an_unknown_role_is_rejected():
+    assert client().post("/api/v1/session/role", json={"role": "root"}).status_code == 422
+
+
+def test_role_switch_survives_a_changed_demo_password(monkeypatch):
+    """The whole point: elevation must not depend on a password the UI knows."""
+    monkeypatch.setenv("SKYSOLVER_DEMO_USER", "someone-else")
+    monkeypatch.setenv("SKYSOLVER_DEMO_PASSWORD", "a-different-password")
+    instance = TestClient(create_app())
+    assert instance.post(
+        "/api/login", json={"username": "someone-else", "password": "a-different-password"}
+    ).status_code == 200
+
+    # ops/sky2026 would now fail, but elevation does not use them.
+    response = instance.post("/api/v1/session/role", json={"role": "deployment-controller"})
+    assert response.status_code == 200
+    assert response.json()["operator"]["role"] == "deployment-controller"
