@@ -33,3 +33,9 @@ mcp_body.json
 
 # stray local server logs
 *.out
+
+# terraform local state and provider cache (lock file IS tracked)
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info

@@ -9,9 +9,9 @@ provider "aws" {
   region = var.aws_region
   default_tags {
     tags = {
-      Product     = "SkySolver"
-      Environment = var.environment
-      ManagedBy   = "Terraform"
+      Product              = "SkySolver"
+      Environment          = var.environment
+      ManagedBy            = "Terraform"
       OperationalAuthority = "disabled"
     }
   }

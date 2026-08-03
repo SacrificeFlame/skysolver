@@ -1,5 +1,5 @@
 locals {
-  edge_enabled = var.public_edge_enabled && var.hosted_zone_id != "" && var.dashboard_hostname != "" && var.acm_certificate_arn != ""
+  edge_enabled   = var.public_edge_enabled && var.hosted_zone_id != "" && var.dashboard_hostname != "" && var.acm_certificate_arn != ""
   cognito_domain = var.cognito_domain_prefix != "" ? var.cognito_domain_prefix : "${local.prefix}-${data.aws_caller_identity.current.account_id}"
 }
 
@@ -9,11 +9,11 @@ resource "aws_security_group" "edge" {
   description = "TLS ingress to the SkySolver API edge"
   vpc_id      = module.vpc.vpc_id
   ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description      = "HTTPS"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
     ipv6_cidr_blocks = ["::/0"]
   }
   egress {
@@ -55,7 +55,11 @@ resource "aws_s3_bucket_public_access_block" "access_logs" {
 resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   count  = local.edge_enabled ? 1 : 0
   bucket = aws_s3_bucket.access_logs[0].id
-  rule { apply_server_side_encryption_by_default { sse_algorithm = "AES256" } }
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
 }
 resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
   count  = local.edge_enabled ? 1 : 0
@@ -92,12 +96,12 @@ resource "aws_s3_bucket_policy" "access_logs" {
 }
 
 resource "aws_lb_target_group" "api" {
-  count       = local.edge_enabled ? 1 : 0
-  name        = substr("${local.prefix}-api", 0, 32)
-  port        = 8080
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = module.vpc.vpc_id
+  count                = local.edge_enabled ? 1 : 0
+  name                 = substr("${local.prefix}-api", 0, 32)
+  port                 = 8080
+  protocol             = "HTTP"
+  target_type          = "ip"
+  vpc_id               = module.vpc.vpc_id
   deregistration_delay = 60
   health_check {
     enabled             = true
@@ -125,7 +129,9 @@ resource "aws_wafv2_web_acl" "api" {
   count = local.edge_enabled ? 1 : 0
   name  = "${local.prefix}-api"
   scope = "REGIONAL"
-  default_action { allow {} }
+  default_action {
+    allow {}
+  }
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name                = "${local.prefix}-waf"
@@ -134,7 +140,9 @@ resource "aws_wafv2_web_acl" "api" {
   rule {
     name     = "AWSManagedCommon"
     priority = 10
-    override_action { none {} }
+    override_action {
+      none {}
+    }
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesCommonRuleSet"
@@ -150,7 +158,9 @@ resource "aws_wafv2_web_acl" "api" {
   rule {
     name     = "AWSManagedKnownBadInputs"
     priority = 20
-    override_action { none {} }
+    override_action {
+      none {}
+    }
     statement {
       managed_rule_group_statement {
         name        = "AWSManagedRulesKnownBadInputsRuleSet"
@@ -166,7 +176,9 @@ resource "aws_wafv2_web_acl" "api" {
   rule {
     name     = "RateLimit"
     priority = 30
-    action { block {} }
+    action {
+      block {}
+    }
     statement {
       rate_based_statement {
         aggregate_key_type = "IP"
@@ -198,11 +210,11 @@ resource "aws_route53_record" "api" {
 }
 
 resource "aws_cognito_identity_provider" "airline_saml" {
-  count         = var.saml_metadata_url != "" ? 1 : 0
-  user_pool_id  = aws_cognito_user_pool.workforce.id
-  provider_name = var.saml_idp_name
-  provider_type = "SAML"
-  provider_details = { MetadataURL = var.saml_metadata_url, IDPSignout = "true" }
+  count             = var.saml_metadata_url != "" ? 1 : 0
+  user_pool_id      = aws_cognito_user_pool.workforce.id
+  provider_name     = var.saml_idp_name
+  provider_type     = "SAML"
+  provider_details  = { MetadataURL = var.saml_metadata_url, IDPSignout = "true" }
   attribute_mapping = { email = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress" }
 }
 resource "aws_cognito_user_pool_domain" "workforce" {
@@ -239,8 +251,10 @@ resource "aws_cloudwatch_log_group" "application" {
   kms_key_id        = aws_kms_key.platform.arn
 }
 resource "aws_cloudwatch_log_group" "audit" {
-  name              = "/skysolver/${local.prefix}/audit"
-  retention_in_days = 2555
+  name = "/skysolver/${local.prefix}/audit"
+  # CloudWatch only accepts a fixed set of retention values; 2555 (the literal
+  # 7 x 365) is not one of them. 2557 is the API's seven-year constant.
+  retention_in_days = 2557
   kms_key_id        = aws_kms_key.platform.arn
 }
 
