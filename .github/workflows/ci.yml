@@ -89,6 +89,10 @@ jobs:
           scan-ref: .
           severity: HIGH,CRITICAL
           exit-code: "1"
+          # The preceding init step downloads third-party Terraform modules into
+          # .terraform/, including example manifests we neither ship nor control.
+          # Scan our own infrastructure, not the vendored examples.
+          skip-dirs: infrastructure/terraform/.terraform
 
   security:
     runs-on: ubuntu-latest
