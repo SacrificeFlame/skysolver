@@ -103,3 +103,17 @@ class ResourceHoldRegistry:
             if hold.recovery_id != recovery_id:
                 raise HoldConflict("hold_recovery_mismatch", "Hold belongs to another recovery")
             self._release(hold_id)
+
+    def release_all_for_recovery(self, recovery_id: str) -> list[str]:
+        """Release every hold a recovery still owns.
+
+        Used when a recovery is superseded: its holds must not outlive it, or
+        the resources it reserved stay locked and no later recovery can ever
+        select a candidate that needs them.
+        """
+        with self._lock:
+            self._expire()
+            hold_ids = [hid for hid, hold in self._holds.items() if hold.recovery_id == recovery_id]
+            for hold_id in hold_ids:
+                self._release(hold_id)
+            return hold_ids

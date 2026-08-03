@@ -24,3 +24,9 @@ screen*_raw.json
 mcp_body.json
 .mcp.json
 .claude/
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+*.key

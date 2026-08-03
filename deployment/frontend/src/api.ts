@@ -1,4 +1,4 @@
-import type {Audit,Candidate,CandidateExplanation,CrewRosterEntry,DataHealth,Deployment,Disruption,Envelope,FleetAircraft,Flight,Overview,PlannedRoute,Provenance,ReassignmentPreview,Recovery,RouteValidation,RuleViolation,SearchResult,SolverTier,Tier3Queue} from './types';
+import type {AgentRun,AgentToolset,Audit,Candidate,CandidateExplanation,CrewRosterEntry,DataHealth,Deployment,Disruption,Envelope,FleetAircraft,Flight,Overview,PlannedRoute,Provenance,ReassignmentPreview,Recovery,RouteValidation,RuleViolation,SearchResult,SolverTier,Tier3Queue} from './types';
 
 // Typed failure that preserves the backend contract fields the operator UI needs.
 // Never invents success: it exposes the exact HTTP status, correlation id, the
@@ -26,8 +26,16 @@ export class ApiError extends Error{
     this.stateVersion=typeof body?.state_version==='number'?body.state_version:undefined;
     this.ruleViolations=Array.isArray(body?.rule_violations)?body.rule_violations:[];
   }
-  /** 409: the plan advanced elsewhere; the operator's input must be preserved and retried against the fresh version. */
-  get isStale():boolean{return this.status===409}
+  /** 409 stale_state: the plan advanced elsewhere; preserve the operator's input and retry against the fresh version. */
+  get isStale():boolean{return this.status===409&&this.code!=='resource_conflict'}
+  /** 409 resource_conflict: crew/aircraft/gates are held by another recovery. Retrying the same call cannot succeed. */
+  get isResourceConflict():boolean{return this.status===409&&this.code==='resource_conflict'}
+  /** The resources named in a hold conflict, parsed from the server message. */
+  get heldResources():string[]{
+    if(!this.isResourceConflict)return[];
+    const tail=this.message.split(':').slice(1).join(':');
+    return tail.split(',').map(s=>s.trim()).filter(Boolean);
+  }
   /** 422: the backend rejected the request as invalid/illegal; no candidate is approved. */
   get isValidation():boolean{return this.status===422}
   /** 401/403: caller lacks authority (approval/deploy need stepped-up auth). */
@@ -79,5 +87,9 @@ export const api={
   compensateDeployment:(id:string,state_version:number,reason:string)=>request<Envelope>(`/api/v1/deployments/${id}/compensate`,{method:'POST',headers:mutationHeaders(state_version),body:JSON.stringify({reason})}),
   search:(q:string)=>request<{items:SearchResult[];query:string;authoritative:boolean}>(`/api/v1/search?q=${encodeURIComponent(q)}`),
   audit:()=>request<{items:Audit[];immutable?:boolean;storage?:string}>('/api/v1/audit'),
-  note:(action:string,detail:string)=>request<{ok:boolean}>('/api/v1/audit',{method:'POST',body:JSON.stringify({action,detail})})
+  note:(action:string,detail:string)=>request<{ok:boolean}>('/api/v1/audit',{method:'POST',body:JSON.stringify({action,detail})}),
+  // Recovery agent. An LLM planner that is unconfigured or rate-limited degrades
+  // to the deterministic planner server-side; the response says which one ran.
+  agentTools:()=>request<AgentToolset>('/api/v1/agent/tools'),
+  agentRun:(planner:'deterministic'|'gemini'|'openai'='deterministic')=>request<AgentRun>('/api/v1/agent/run',{method:'POST',body:JSON.stringify({planner})})
 };

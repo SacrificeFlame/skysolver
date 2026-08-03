@@ -17,8 +17,8 @@ describe('Data Health workspace states',()=>{
   render(<DataHealthWorkspace/>);
   expect(screen.getByText(/Evaluating source systems/i)).toBeTruthy();
   await screen.findByText(/operation gates/i);
-  expect(screen.getByText(/scenario-fixture/)).toBeTruthy();
-  expect(screen.getByText(/Closed — publication requires/i)).toBeTruthy();
+  expect(screen.getByText(/Operations feed 1/)).toBeTruthy();
+  expect(screen.getByText(/Closed — source verification/i)).toBeTruthy();
  });
  it('shows an explicit unavailable state on error',async()=>{
   vi.stubGlobal('fetch',vi.fn(()=>fail(503,{message:'health down'})));

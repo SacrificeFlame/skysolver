@@ -14,6 +14,13 @@ import uuid
 from pathlib import Path
 from typing import Annotated, Literal
 
+try:  # Local development reads credentials from .env; hosted runtimes inject them.
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:  # pragma: no cover - python-dotenv is optional at runtime
+    pass
+
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -56,6 +63,12 @@ class RecoveryRequest(BaseModel):
 class ReassignmentPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     crew_id: str = Field(min_length=1, max_length=64)
+
+
+class AgentRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    planner: Literal["deterministic", "gemini", "openai"] = "deterministic"
+    model: str | None = Field(default=None, max_length=64)
 
 
 class AuditNoteRequest(BaseModel):
@@ -255,6 +268,46 @@ def create_app(recovery_store=recovery_store, data_health_registry=None,
     @app.post("/api/v1/flights/{flight_id}/reassignment-preview")
     def reassignment_preview(flight_id: str, body: ReassignmentPreviewRequest, _: Principal = Depends(principal)):
         return recovery_store.reassignment_preview(flight_id, body.crew_id)
+
+    @app.get("/api/v1/agent/tools")
+    def agent_tools(_: Principal = Depends(principal)):
+        """The exact tool surface the agent is allowed to use."""
+        from agents import build_registry
+
+        registry = build_registry(recovery_store)
+        return {
+            "items": registry.anthropic_tools(),
+            "guarantees": [
+                "commit_reassignment is refused unless the rules engine returned "
+                "legal=true for that exact flight and crew in the same run",
+                "escalate_to_tier3 is refused until every type-rated candidate has "
+                "been evaluated and rejected",
+                "the agent proposes a plan; publishing still requires the "
+                "scheduler, duty-manager and deployment-controller gates",
+            ],
+        }
+
+    @app.post("/api/v1/agent/run")
+    def agent_run(body: AgentRunRequest, _: Principal = Depends(principal)):
+        """Run the recovery agent and return its plan plus the full decision trace."""
+        from agents import DeterministicPlanner, RecoveryAgent, build_planner
+
+        degraded_note = None
+        try:
+            planner = build_planner(body.planner, model=body.model)
+        except RuntimeError as exc:
+            # An unconfigured LLM planner must not fail the request: the
+            # deterministic planner produces the same plan without a credential.
+            planner = DeterministicPlanner()
+            degraded_note = str(exc)
+
+        result = RecoveryAgent(recovery_store, planner=planner).run()
+        payload = result.to_dict()
+        if degraded_note:
+            payload["notes"] = [degraded_note, *payload.get("notes", [])]
+        payload["requested_planner"] = body.planner
+        payload["provenance"] = DATA_PROVENANCE
+        return payload
 
     @app.get("/api/v1/routes")
     def routes(_: Principal = Depends(principal)):

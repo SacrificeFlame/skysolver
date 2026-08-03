@@ -35,3 +35,6 @@ httpx2>=2.9  # Starlette/FastAPI contract and ASGI tests
 numpy>=1.24  # Numerical operations
 pandas>=2.0  # Data manipulation
 python-dotenv>=1.0  # Config management
+
+# Recovery agent
+openai>=2.0  # LLM planner (optional; agent falls back to the deterministic planner)

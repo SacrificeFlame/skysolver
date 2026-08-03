@@ -320,8 +320,15 @@ class RecoveryStore:
             tier3_crew_pool=[crew for crew in crews if crew.crew_id not in assigned_crew_ids]
             tier3_suggestions=[item.to_dict() for item in generate_suggestions(tier2_uncovered,tier3_crew_pool,payload.get("partition_id","DEL"),1)]
             recovery = {"id": rid, "disruption_id": payload.get("disruption_id", DISRUPTIONS[0]["id"]), "partition_id": payload.get("partition_id", "DEL"), "objective": payload.get("objective", "balanced"), "status": "awaiting_intervention", "stage": "tier3_scheduler_review", "tier": "tier3", "progress": round(max(c["coverage"] for c in candidates)*100), "state_version": 1, "selected_candidate_id": None, "validated": False, "deployed": False, "proposed_by": payload.get("operator_id", "system"), "approvals": [], "created_at": _now(), "updated_at": _now(), "candidates": candidates, "tier3":{"status":"ready","unresolved_flight_ids":[f.flight_id for f in tier2_uncovered],"suggestions":tier3_suggestions}, "acknowledgements": [],"provenance":deepcopy(DATA_PROVENANCE),"carrier_writes_enabled":self._carrier_writes_enabled}
+            # A new recovery for the same disruption supersedes the earlier ones.
+            # Their resource holds must be released, or the crew, aircraft and
+            # gates they reserved stay locked and this recovery can never select
+            # a candidate that needs them.
+            released = self._supersede_prior_recoveries(recovery["disruption_id"], rid)
             self._recoveries[rid] = recovery
             self._record(rid, "recovery_created", "system", f"Executable synthetic solve produced {len(candidates)} candidates")
+            if released:
+                self._record(rid, "holds_released", "system", f"Superseded {len(released)} prior recovery hold(s)")
             self._persist()
             return self.envelope("awaiting_review", 1, correlation_id=payload.get("correlation_id"), causation_id=payload.get("causation_id"), recovery=deepcopy(recovery))
 
@@ -385,6 +392,18 @@ class RecoveryStore:
             self._record(recovery_id,f"tier3_suggestion_{action}",payload.get("operator_id","scheduler-demo"),reason or suggestion_id)
             self._persist()
             return self.envelope("tier3_updated",recovery["state_version"],correlation_id=payload.get("correlation_id"),causation_id=payload.get("causation_id"),recovery=deepcopy(recovery))
+
+    def _supersede_prior_recoveries(self, disruption_id, new_recovery_id):
+        """Mark earlier recoveries for this disruption superseded and free their holds."""
+        released = []
+        for rid, prior in self._recoveries.items():
+            if rid == new_recovery_id or prior.get("disruption_id") != disruption_id:
+                continue
+            if prior.get("status") != "superseded":
+                prior["status"] = "superseded"
+                prior["updated_at"] = _now()
+            released.extend(self._hold_registry.release_all_for_recovery(rid))
+        return released
 
     def _version(self, recovery, payload):
         expected = payload.get("state_version")

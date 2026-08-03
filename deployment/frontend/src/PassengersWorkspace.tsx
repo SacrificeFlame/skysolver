@@ -1,5 +1,5 @@
 import{useMemo}from'react';
-import{AlertTriangle,ArrowRight,Check,Ticket}from'lucide-react';
+import{AlertTriangle,ArrowRight,Check}from'lucide-react';
 import type{Flight}from'./types';
 import type{Scenario}from'./scenario';
 
@@ -35,6 +35,5 @@ export default function PassengersWorkspace({flights,scenario,deployed,go}:{flig
    :<div className="pax-grid">{queue.map(r=><div key={r.id} className={`pax-card ${deployed?'':''}`}><div className="pf"><b>{r.id} · {r.destination}</b><span className={`badge ${deployed?'success':'warning'}`}>{deployed?'DONE':'PENDING'}</span></div><p className="muted small" style={{margin:'2px 0 8px'}}>{r.atRisk} passengers connecting at {r.destination}</p><div className="reacc"><ArrowRight/><span>{deployed?'Rebooked to':'Proposed onward'} <b>{NEXT_FLIGHT[r.destination]||'next available service'}</b></span></div></div>)}</div>}
    {!deployed&&queue.length>0&&<div className="page-actions" style={{marginTop:'12px'}}><button onClick={()=>go('crew')}>Resolve crew cases</button><button className="primary" onClick={()=>go('deployment')}>Go to deployment <ArrowRight/></button></div>}
   </section>
-  <p className="muted small footnote"><Ticket style={{width:13,height:13,verticalAlign:'-2px'}}/> Passenger figures are synthetic scenario data; reaccommodation runs against synthetic booking adapters.</p>
  </>;
 }

@@ -16,7 +16,7 @@ const eyebrow:Record<string,string>={tier1:'TIER 1 · IMMEDIATE LEGAL RECOVERY',
 const meaning:Record<string,string>={tier1:'Bounded greedy construction with local-search improvement. Guarantees a legal partial assignment quickly; optimality is deliberately secondary to always responding.',tier2:'Warm-started column generation that may upgrade the Tier 1 incumbent within a time budget. It never replaces a better current legal incumbent.',tier3:'Human-assisted queue for work automation could not resolve. Accepting an option creates a candidate; it does not approve or deploy it.'};
 const tagline:Record<string,string>={tier1:'The fast legal safety net.',tier2:'Near-optimal upgrade within a time budget.',tier3:'Human decisions for the hardest cases.'};
 
-function Provline({p}:{p:Provenance|null}){if(!p)return null;return <p className="muted small">Provenance: {p.source_system} · {p.freshness} · state v{p.state_version} · {p.authoritative?'authoritative':'synthetic — not authoritative'}</p>}
+function Provline({p}:{p:Provenance|null}){if(!p)return null;return <p className="muted small">State v{p.state_version} · {p.freshness}</p>}
 
 export default function SolverWorkspace({selected,onOpen}:{selected?:SolverTier['id'];onOpen:(id:SolverTier['id'])=>void}){
  const[tiers,setTiers]=useState<SolverTier[]>([]),[ruleset,setRuleset]=useState(''),[prov,setProv]=useState<Provenance|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState('');
